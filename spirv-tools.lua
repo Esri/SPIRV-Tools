@@ -247,10 +247,10 @@ files {
   "source/val/validate_scopes.cpp",
   "source/val/validate_small_type_uses.cpp",
   "source/val/validate_type.cpp",
-  "source/val/basic_block.cpp",
+  "source/val/basic_block_rtc_shim.cpp",
   "source/val/construct.cpp",
-  "source/val/function.cpp",
-  "source/val/instruction.cpp",
+  "source/val/function_rtc_shim.cpp",
+  "source/val/instruction_rtc_shim.cpp",
   "source/val/validation_state.cpp",
 }
 
