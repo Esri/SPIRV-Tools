@@ -35,3 +35,17 @@ MODULE.bazel.lock
 
 # VSCode
 /.vscode/*
+
+# RTC ignores
+
+# Premake generated files #
+###########################
+*.vcxproj*
+*.sln
+*.make
+Makefile
+*.xcworkspace
+*.xcodeproj
+compile_commands.json
+*_single_file_build.cpp
+*_unity_build.cpp
