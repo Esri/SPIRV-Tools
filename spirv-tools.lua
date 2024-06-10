@@ -17,8 +17,6 @@ local PYTHON_EXE = "/usr/local/rtc/python/3.8/bin/python"
 if (os.is("windows")) then
   PYTHON_EXE = "C:/rtc/python/3.8/Scripts/python"
 end
-local JINJA2_PATH = _3RDPARTY_DIR .. "/jinja/src/jinja2"
-local MARKUPSAFE_PATH = _3RDPARTY_DIR .. "markupsafe/src/markupsafe"
 
 os.execute(PYTHON_EXE.." "..SPIRV_TOOLS_SRC_DIR.."/utils/generate_grammar_tables.py --spirv-core-grammar="..SPIRV_HEADERS_SRC_DIR.."/include/spirv/unified1/spirv.core.grammar.json --extinst-debuginfo-grammar="..SPIRV_HEADERS_SRC_DIR.."/include/spirv/unified1/extinst.debuginfo.grammar.json --extinst-cldebuginfo100-grammar="..SPIRV_HEADERS_SRC_DIR.."/include/spirv/unified1/extinst.opencl.debuginfo.100.grammar.json --core-insts-output="..SPIRV_TOOLS_GEN_OUTPUT_DIR.."/core.insts-unified1.inc --operand-kinds-output="..SPIRV_TOOLS_GEN_OUTPUT_DIR.."/operand.kinds-unified1.inc --output-language=c++")
 
