@@ -255,9 +255,6 @@ files {
 if (_PLATFORM_ANDROID) then
 end
 
-if (_PLATFORM_COCOA) then
-end
-
 if (_PLATFORM_IOS) then
 end
 
