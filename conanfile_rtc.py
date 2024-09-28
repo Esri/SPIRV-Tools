@@ -1,10 +1,10 @@
 from conans import ConanFile
 
 class SPIRVToolsConan(ConanFile):
-    name = "SPIRV-Tools"
+    name = "spirv-tools"
     version = "0.0.1"
-    url = "https://github.com/duncanthomson/SPIRV-Tools"
-    license = "https://github.com/duncanthomson/SPIRV-Tools/blob/main/LICENSE"
+    url = "https://github.com/Esri/SPIRV-Tools/blob/runtimecore"
+    license = "https://github.com/Esri/SPIRV-Tools/blob/runtimecore/LICENSE"
     description = "An API and commands for processing SPIR-V modules"
 
     # RTC specific triple
