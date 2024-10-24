@@ -13,9 +13,9 @@ local SPIRV_HEADERS_SRC_DIR = _3RDPARTY_DIR .. "/SPIRV-Headers"
 -- Generation
 --
 local SPIRV_TOOLS_GEN_OUTPUT_DIR = SPIRV_TOOLS_SRC_DIR.."/out/gen"
-local PYTHON_EXE = "/usr/local/rtc/python/3.8/bin/python"
+local PYTHON_EXE = "/usr/local/rtc/python/3.12/bin/python"
 if (os.is("windows")) then
-  PYTHON_EXE = "C:/rtc/python/3.8/Scripts/python"
+  PYTHON_EXE = "C:/rtc/python/3.12/Scripts/python"
 end
 
 os.execute(PYTHON_EXE.." "..SPIRV_TOOLS_SRC_DIR.."/utils/generate_grammar_tables.py --spirv-core-grammar="..SPIRV_HEADERS_SRC_DIR.."/include/spirv/unified1/spirv.core.grammar.json --extinst-debuginfo-grammar="..SPIRV_HEADERS_SRC_DIR.."/include/spirv/unified1/extinst.debuginfo.grammar.json --extinst-cldebuginfo100-grammar="..SPIRV_HEADERS_SRC_DIR.."/include/spirv/unified1/extinst.opencl.debuginfo.100.grammar.json --core-insts-output="..SPIRV_TOOLS_GEN_OUTPUT_DIR.."/core.insts-unified1.inc --operand-kinds-output="..SPIRV_TOOLS_GEN_OUTPUT_DIR.."/operand.kinds-unified1.inc --output-language=c++")
