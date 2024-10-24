@@ -17,6 +17,7 @@ class SPIRVToolsConan(ConanFile):
         # headers
         self.copy("*.h", src=base + "/include", dst=relative + "/include")
         self.copy("*.hpp", src=base + "/include", dst=relative + "/include")
+        self.copy("*.h", src=base + "/source/opt", dst=relative + "/source/opt")
 
         # libraries
         output = "output/" + str(self.settings.platform_architecture_target) + "/staticlib"
