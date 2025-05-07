@@ -18,13 +18,11 @@ if (os.is("windows")) then
   PYTHON_EXE = "C:/rtc/python/3.12/Scripts/python"
 end
 
-os.execute(PYTHON_EXE.." "..SPIRV_TOOLS_SRC_DIR.."/utils/generate_grammar_tables.py --spirv-core-grammar="..SPIRV_HEADERS_SRC_DIR.."/include/spirv/unified1/spirv.core.grammar.json --extinst-debuginfo-grammar="..SPIRV_HEADERS_SRC_DIR.."/include/spirv/unified1/extinst.debuginfo.grammar.json --extinst-cldebuginfo100-grammar="..SPIRV_HEADERS_SRC_DIR.."/include/spirv/unified1/extinst.opencl.debuginfo.100.grammar.json --core-insts-output="..SPIRV_TOOLS_GEN_OUTPUT_DIR.."/core.insts-unified1.inc --operand-kinds-output="..SPIRV_TOOLS_GEN_OUTPUT_DIR.."/operand.kinds-unified1.inc --output-language=c++")
+os.execute(PYTHON_EXE.." "..SPIRV_TOOLS_SRC_DIR.."/utils/ggt.py --spirv-core-grammar="..SPIRV_HEADERS_SRC_DIR.."/include/spirv/unified1/spirv.core.grammar.json --extinst-debuginfo-grammar="..SPIRV_HEADERS_SRC_DIR.."/include/spirv/unified1/extinst.debuginfo.grammar.json --extinst-cldebuginfo100-grammar="..SPIRV_HEADERS_SRC_DIR.."/include/spirv/unified1/extinst.opencl.debuginfo.100.grammar.json --core-tables-body-output="..SPIRV_TOOLS_GEN_OUTPUT_DIR.."/core_tables_body.inc --core-tables-header-output="..SPIRV_TOOLS_GEN_OUTPUT_DIR.."/core_tables_header.inc")
 
-os.execute(PYTHON_EXE.." "..SPIRV_TOOLS_SRC_DIR.."/utils/generate_grammar_tables.py --spirv-core-grammar="..SPIRV_HEADERS_SRC_DIR.."/include/spirv/unified1/spirv.core.grammar.json --extinst-debuginfo-grammar="..SPIRV_HEADERS_SRC_DIR.."/include/spirv/unified1/extinst.debuginfo.grammar.json --extinst-cldebuginfo100-grammar="..SPIRV_HEADERS_SRC_DIR.."/include/spirv/unified1/extinst.opencl.debuginfo.100.grammar.json --extension-enum-output="..SPIRV_TOOLS_GEN_OUTPUT_DIR.."/extension_enum.inc --enum-string-mapping-output="..SPIRV_TOOLS_GEN_OUTPUT_DIR.."/enum_string_mapping.inc --output-language=c++")
+os.execute(PYTHON_EXE.." "..SPIRV_TOOLS_SRC_DIR.."/utils/generate_grammar_tables.py --extinst-vendor-grammar="..SPIRV_HEADERS_SRC_DIR.."/include/spirv/unified1/extinst.opencl.std.100.grammar.json --vendor-insts-output="..SPIRV_TOOLS_GEN_OUTPUT_DIR.."/opencl.std.100.insts.inc --vendor-operand-kind-prefix=")
 
-os.execute(PYTHON_EXE.." "..SPIRV_TOOLS_SRC_DIR.."/utils/generate_grammar_tables.py --extinst-opencl-grammar="..SPIRV_HEADERS_SRC_DIR.."/include/spirv/unified1/extinst.opencl.std.100.grammar.json --opencl-insts-output="..SPIRV_TOOLS_GEN_OUTPUT_DIR.."/opencl.std.insts.inc")
-
-os.execute(PYTHON_EXE.." "..SPIRV_TOOLS_SRC_DIR.."/utils/generate_grammar_tables.py --extinst-glsl-grammar="..SPIRV_HEADERS_SRC_DIR.."/include/spirv/unified1/extinst.glsl.std.450.grammar.json --glsl-insts-output="..SPIRV_TOOLS_GEN_OUTPUT_DIR.."/glsl.std.450.insts.inc --output-language=c++")
+os.execute(PYTHON_EXE.." "..SPIRV_TOOLS_SRC_DIR.."/utils/generate_grammar_tables.py --extinst-vendor-grammar="..SPIRV_HEADERS_SRC_DIR.."/include/spirv/unified1/extinst.glsl.std.450.grammar.json --vendor-insts-output="..SPIRV_TOOLS_GEN_OUTPUT_DIR.."/glsl.std.450.insts.inc --vendor-operand-kind-prefix=")
 
 os.execute(PYTHON_EXE.." "..SPIRV_TOOLS_SRC_DIR.."/utils/generate_grammar_tables.py --extinst-vendor-grammar="..SPIRV_HEADERS_SRC_DIR.."/include/spirv/unified1/extinst.spv-amd-shader-explicit-vertex-parameter.grammar.json --vendor-insts-output="..SPIRV_TOOLS_GEN_OUTPUT_DIR.."/spv-amd-shader-explicit-vertex-parameter.insts.inc --vendor-operand-kind-prefix=")
 
@@ -70,7 +68,6 @@ files {
   "source/binary.cpp",
   "source/diagnostic.cpp",
   "source/disassemble.cpp",
-  "source/enum_string_mapping.cpp",
   "source/ext_inst.cpp",
   "source/extensions.cpp",
   "source/libspirv.cpp",
@@ -87,6 +84,7 @@ files {
   "source/spirv_target_env.cpp",
   "source/spirv_validator_options.cpp",
   "source/table.cpp",
+  "source/table2.cpp",
   "source/text.cpp",
   "source/text_handler.cpp",
   "source/to_string.cpp",
