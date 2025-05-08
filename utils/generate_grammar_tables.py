@@ -14,6 +14,8 @@
 # limitations under the License.
 """Generates various info tables from SPIR-V JSON grammar."""
 
+# NOTE: This is being replaced by ggt.py
+
 import errno
 import json
 import os.path
@@ -31,9 +33,8 @@ SPV_AMD_gpu_shader_half_float
 SPV_AMD_gpu_shader_int16
 SPV_AMD_shader_trinary_minmax
 SPV_KHR_non_semantic_info
+SPV_EXT_relaxed_printf_string_address_space
 """
-
-OUTPUT_LANGUAGE = 'c'
 
 def make_path_to_file(f):
     """Makes all ancestor directories to the given file, if they don't yet
@@ -69,6 +70,39 @@ def convert_max_required_version(version):
         return '0xffffffffu'
     return 'SPV_SPIRV_VERSION_WORD({})'.format(version.replace('.', ','))
 
+def get_alias_array_name(aliases):
+    """Returns the name of the array containing all the given aliases.
+
+    Arguments:
+      - aliases: a sequence of alias names
+    """
+    if not aliases:
+        return 'nullptr';
+    return '{}_aliases_{}'.format(PYGEN_VARIABLE_PREFIX, ''.join(aliases))
+
+def compose_alias_list(aliases):
+    """Returns a string containing a braced list of aliases.
+
+    Arguments:
+      - aliases: a sequence of alias names
+
+    Returns:
+      a string containing the braced list of char* named by aliases.
+    """
+    return '{' + ', '.join([('"{}"').format(a) for a in aliases]) + '}'
+
+def generate_aliases_arrays(aliases):
+    """Returns the arrays of aliases
+
+    Arguments:
+      - aliases: a sequence of sequence of alias names
+    """
+    aliases = sorted(set([tuple(a) for a in aliases if a]))
+    arrays = [
+        'static const char* {}[] = {};'.format(
+            get_alias_array_name(a), compose_alias_list(a))
+        for a in aliases]
+    return '\n'.join(arrays)
 
 def compose_capability_list(caps):
     """Returns a string containing a braced list of capabilities as enums.
@@ -79,10 +113,7 @@ def compose_capability_list(caps):
     Returns:
       a string containing the braced list of SpvCapability* or spv::Capability:: enums named by caps.
     """
-    base_string = 'SpvCapability'
-    global OUTPUT_LANGUAGE
-    if OUTPUT_LANGUAGE == 'c++':
-        base_string = 'spv::Capability::'
+    base_string = 'spv::Capability::'
 
     return '{' + ', '.join([(base_string + '{}').format(c) for c in caps]) + '}'
 
@@ -105,10 +136,7 @@ def generate_capability_arrays(caps):
       - caps: a sequence of sequence of capability names
     """
     caps = sorted(set([tuple(c) for c in caps if c]))
-    cap_str = 'SpvCapability'
-    global OUTPUT_LANGUAGE
-    if OUTPUT_LANGUAGE == 'c++':
-        cap_str = 'spv::Capability'
+    cap_str = 'spv::Capability'
     arrays = [
         'static const ' + cap_str + ' {}[] = {};'.format(
             get_capability_array_name(c), compose_capability_list(c))
@@ -223,11 +251,12 @@ class InstInitializer(object):
     """Instances holds a SPIR-V instruction suitable for printing as the
     initializer for spv_opcode_desc_t."""
 
-    def __init__(self, opname, caps, exts, operands, version, lastVersion):
+    def __init__(self, opname, aliases, caps, exts, operands, version, lastVersion):
         """Initialization.
 
         Arguments:
           - opname: opcode name (with the 'Op' prefix)
+          - aliases: a sequence of aliases for the name of this opcode
           - caps: a sequence of capability names required by this opcode
           - exts: a sequence of names of extensions enabling this enumerant
           - operands: a sequence of (operand-kind, operand-quantifier) tuples
@@ -237,6 +266,8 @@ class InstInitializer(object):
 
         assert opname.startswith('Op')
         self.opname = opname[2:]  # Remove the "Op" prefix.
+        self.num_aliases = len(aliases);
+        self.aliases_mask = get_alias_array_name(aliases)
         self.num_caps = len(caps)
         self.caps_mask = get_capability_array_name(caps)
         self.num_exts = len(exts)
@@ -265,12 +296,9 @@ class InstInitializer(object):
             self.operands.pop()
 
     def __str__(self):
-        global OUTPUT_LANGUAGE
-        base_str = 'SpvOp'
-        if OUTPUT_LANGUAGE == 'c++':
-            base_str = 'spv::Op::Op'
-
+        base_str = 'spv::Op::Op'
         template = ['{{"{opname}"', base_str + '{opname}',
+                    '{num_aliases}', '{aliases_mask}',
                     '{num_caps}', '{caps_mask}',
                     '{num_operands}', '{{{operands}}}',
                     '{def_result_id}', '{ref_type_id}',
@@ -278,6 +306,8 @@ class InstInitializer(object):
                     '{min_version}', '{max_version}}}']
         return ', '.join(template).format(
             opname=self.opname,
+            num_aliases=self.num_aliases,
+            aliases_mask=self.aliases_mask,
             num_caps=self.num_caps,
             caps_mask=self.caps_mask,
             num_operands=len(self.operands),
@@ -335,6 +365,7 @@ def generate_instruction(inst, is_ext_inst):
     """
     opname = inst.get('opname')
     opcode = inst.get('opcode')
+    aliases = inst.get('aliases', [])
     caps = inst.get('capabilities', [])
     exts = inst.get('extensions', [])
     operands = inst.get('operands', {})
@@ -347,7 +378,7 @@ def generate_instruction(inst, is_ext_inst):
     if is_ext_inst:
         return str(ExtInstInitializer(opname, opcode, caps, operands))
     else:
-        return str(InstInitializer(opname, caps, exts, operands, min_version, max_version))
+        return str(InstInitializer(opname, aliases, caps, exts, operands, min_version, max_version))
 
 
 def generate_instruction_table(inst_table):
@@ -363,6 +394,8 @@ def generate_instruction_table(inst_table):
     """
     inst_table = sorted(inst_table, key=lambda k: (k['opcode'], k['opname']))
 
+    aliases_arrays = generate_aliases_arrays(
+        [inst.get('aliases', []) for inst in inst_table])
     caps_arrays = generate_capability_arrays(
         [inst.get('capabilities', []) for inst in inst_table])
     exts_arrays = generate_extension_arrays(
@@ -372,7 +405,7 @@ def generate_instruction_table(inst_table):
     insts = ['static const spv_opcode_desc_t kOpcodeTableEntries[] = {{\n'
              '  {}\n}};'.format(',\n  '.join(insts))]
 
-    return '{}\n\n{}\n\n{}'.format(caps_arrays, exts_arrays, '\n'.join(insts))
+    return '{}\n\n{}\n\n{}\n\n{}'.format(aliases_arrays, caps_arrays, exts_arrays, '\n'.join(insts))
 
 
 def generate_extended_instruction_table(json_grammar, set_name, operand_kind_prefix=""):
@@ -404,12 +437,13 @@ def generate_extended_instruction_table(json_grammar, set_name, operand_kind_pre
 class EnumerantInitializer(object):
     """Prints an enumerant as the initializer for spv_operand_desc_t."""
 
-    def __init__(self, enumerant, value, caps, exts, parameters, version, lastVersion):
+    def __init__(self, enumerant, value, aliases, caps, exts, parameters, version, lastVersion):
         """Initialization.
 
         Arguments:
           - enumerant: enumerant name
           - value: enumerant value
+          - aliases: a sequence of aliased capability names
           - caps: a sequence of capability names required by this enumerant
           - exts: a sequence of names of extensions enabling this enumerant
           - parameters: a sequence of (operand-kind, operand-quantifier) tuples
@@ -418,6 +452,8 @@ class EnumerantInitializer(object):
         """
         self.enumerant = enumerant
         self.value = value
+        self.num_aliases = len(aliases)
+        self.aliases = get_alias_array_name(aliases)
         self.num_caps = len(caps)
         self.caps = get_capability_array_name(caps)
         self.num_exts = len(exts)
@@ -427,13 +463,17 @@ class EnumerantInitializer(object):
         self.lastVersion = convert_max_required_version(lastVersion)
 
     def __str__(self):
-        template = ['{{"{enumerant}"', '{value}', '{num_caps}',
-                    '{caps}', '{num_exts}', '{exts}',
+        template = ['{{"{enumerant}"', '{value}',
+                    '{num_aliases}', '{aliases}',
+                    '{num_caps}', '{caps}',
+                    '{num_exts}', '{exts}',
                     '{{{parameters}}}', '{min_version}',
                     '{max_version}}}']
         return ', '.join(template).format(
             enumerant=self.enumerant,
             value=self.value,
+            num_aliases=self.num_aliases,
+            aliases=self.aliases,
             num_caps=self.num_caps,
             caps=self.caps,
             num_exts=self.num_exts,
@@ -455,6 +495,7 @@ def generate_enum_operand_kind_entry(entry, extension_map):
     """
     enumerant = entry.get('enumerant')
     value = entry.get('value')
+    aliases = entry.get('aliases', [])
     caps = entry.get('capabilities', [])
     if value in extension_map:
         exts = extension_map[value]
@@ -470,7 +511,7 @@ def generate_enum_operand_kind_entry(entry, extension_map):
     assert value is not None
 
     return str(EnumerantInitializer(
-        enumerant, value, caps, exts, params, version, max_version))
+        enumerant, value, aliases, caps, exts, params, version, max_version))
 
 
 def generate_enum_operand_kind(enum, synthetic_exts_list):
@@ -512,6 +553,10 @@ def generate_enum_operand_kind(enum, synthetic_exts_list):
     name = '{}_{}Entries'.format(PYGEN_VARIABLE_PREFIX, kind)
     entries = ['  {}'.format(generate_enum_operand_kind_entry(e, extension_map))
                for e in entries]
+    if len(entries) == 0:
+        # Insert a dummy entry. Otherwise the array is empty and compilation
+        # will fail in MSVC.
+        entries = ['  {"place holder", 0, 0, nullptr, 0, nullptr, 0, nullptr, {}, SPV_SPIRV_VERSION_WORD(999,0), 0}']
 
     template = ['static const spv_operand_desc_t {name}[] = {{',
                 '{entries}', '}};']
@@ -527,6 +572,11 @@ def generate_operand_kind_table(enums):
     # We only need to output info tables for those operand kinds that are enums.
     enums = [e for e in enums if e.get('category') in ['ValueEnum', 'BitEnum']]
 
+    aliases = [entry.get('aliases', [])
+               for enum in enums
+               for entry in enum.get('enumerants', [])]
+    aliases_arrays = generate_aliases_arrays(aliases)
+
     caps = [entry.get('capabilities', [])
             for enum in enums
             for entry in enum.get('enumerants', [])]
@@ -540,7 +590,7 @@ def generate_operand_kind_table(enums):
 
     # We have a few operand kinds that require their optional counterpart to
     # exist in the operand info table.
-    optional_enums = ['ImageOperands', 'AccessQualifier', 'MemoryAccess', 'PackedVectorFormat', 'CooperativeMatrixOperands', 'RawAccessChainOperands']
+    optional_enums = ['ImageOperands', 'AccessQualifier', 'MemoryAccess', 'PackedVectorFormat', 'CooperativeMatrixOperands', 'MatrixMultiplyAccumulateOperands', 'RawAccessChainOperands', 'FPEncoding']
     optional_enums = [e for e in enums if e[0] in optional_enums]
     enums.extend(optional_enums)
 
@@ -561,7 +611,7 @@ def generate_operand_kind_table(enums):
     table = '\n'.join(template).format(
         p=PYGEN_VARIABLE_PREFIX, enums=',\n'.join(table_entries))
 
-    return '\n\n'.join((caps_arrays,) + (exts_arrays,) + enum_entries + (table,))
+    return '\n\n'.join((aliases_arrays,) + (caps_arrays,) + (exts_arrays,) + enum_entries + (table,))
 
 
 def get_extension_list(instructions, operand_kinds):
@@ -649,12 +699,8 @@ def generate_capability_to_string_mapping(operand_kinds):
 
     We take care to avoid emitting duplicate values.
     """
-    cap_str = 'SpvCapability'
-    cap_join = ''
-    global OUTPUT_LANGUAGE
-    if OUTPUT_LANGUAGE == 'c++':
-        cap_str = 'spv::Capability'
-        cap_join = '::'
+    cap_str = 'spv::Capability'
+    cap_join = '::'
 
     function = 'const char* CapabilityToString(' + cap_str + ' capability) {\n'
     function += '  switch (capability) {\n'
@@ -719,7 +765,7 @@ def prefix_operand_kind_names(prefix, json_dict):
     """
 
     old_to_new = {}
-    for operand_kind in json_dict["operand_kinds"]:
+    for operand_kind in json_dict.get("operand_kinds", []):
         old_name = operand_kind["kind"]
         new_name = prefix + old_name
         operand_kind["kind"] = new_name
@@ -748,31 +794,7 @@ def main():
                         type=str, required=False, default=None,
                         help='input JSON grammar file for OpenCL.DebugInfo.100 '
                         'extended instruction set')
-    parser.add_argument('--extinst-glsl-grammar', metavar='<path>',
-                        type=str, required=False, default=None,
-                        help='input JSON grammar file for GLSL extended '
-                        'instruction set')
-    parser.add_argument('--extinst-opencl-grammar', metavar='<path>',
-                        type=str, required=False, default=None,
-                        help='input JSON grammar file for OpenCL extended '
-                        'instruction set')
-    parser.add_argument('--output-language',
-                        type=str, required=False, default='c',
-                        choices=['c','c++'],
-                        help='specify output language type')
 
-    parser.add_argument('--core-insts-output', metavar='<path>',
-                        type=str, required=False, default=None,
-                        help='output file for core SPIR-V instructions')
-    parser.add_argument('--glsl-insts-output', metavar='<path>',
-                        type=str, required=False, default=None,
-                        help='output file for GLSL extended instruction set')
-    parser.add_argument('--opencl-insts-output', metavar='<path>',
-                        type=str, required=False, default=None,
-                        help='output file for OpenCL extended instruction set')
-    parser.add_argument('--operand-kinds-output', metavar='<path>',
-                        type=str, required=False, default=None,
-                        help='output file for operand kinds')
     parser.add_argument('--extension-enum-output', metavar='<path>',
                         type=str, required=False, default=None,
                         help='output file for extension enumeration')
@@ -791,45 +813,17 @@ def main():
                         help='prefix for operand kinds (to disambiguate operand type enums)')
     args = parser.parse_args()
 
-    global OUTPUT_LANGUAGE
-    OUTPUT_LANGUAGE = args.output_language
-
     # The GN build system needs this because it doesn't handle quoting
     # empty string arguments well.
     if args.vendor_operand_kind_prefix == "...nil...":
         args.vendor_operand_kind_prefix = ""
 
-    if (args.core_insts_output is None) != \
-            (args.operand_kinds_output is None):
-        print('error: --core-insts-output and --operand-kinds-output '
-              'should be specified together.')
-        exit(1)
-    if args.operand_kinds_output and not (args.spirv_core_grammar and
-         args.extinst_debuginfo_grammar and
-         args.extinst_cldebuginfo100_grammar):
-        print('error: --operand-kinds-output requires --spirv-core-grammar '
-              'and --extinst-debuginfo-grammar '
-              'and --extinst-cldebuginfo100-grammar')
-        exit(1)
-    if (args.glsl_insts_output is None) != \
-            (args.extinst_glsl_grammar is None):
-        print('error: --glsl-insts-output and --extinst-glsl-grammar '
-              'should be specified together.')
-        exit(1)
-    if (args.opencl_insts_output is None) != \
-            (args.extinst_opencl_grammar is None):
-        print('error: --opencl-insts-output and --extinst-opencl-grammar '
-              'should be specified together.')
-        exit(1)
     if (args.vendor_insts_output is None) != \
             (args.extinst_vendor_grammar is None):
         print('error: --vendor-insts-output and '
               '--extinst-vendor-grammar should be specified together.')
         exit(1)
-    if all([args.core_insts_output is None,
-            args.glsl_insts_output is None,
-            args.opencl_insts_output is None,
-            args.vendor_insts_output is None,
+    if all([args.vendor_insts_output is None,
             args.extension_enum_output is None,
             args.enum_string_mapping_output is None]):
         print('error: at least one output should be specified.')
@@ -853,14 +847,6 @@ def main():
                     operand_kinds.extend(cldebuginfo100_grammar['operand_kinds'])
                     extensions = get_extension_list(instructions, operand_kinds)
                     operand_kinds = precondition_operand_kinds(operand_kinds)
-        if args.core_insts_output is not None:
-            make_path_to_file(args.core_insts_output)
-            make_path_to_file(args.operand_kinds_output)
-            with open(args.core_insts_output, 'w') as f:
-                f.write(generate_instruction_table(
-                    core_grammar['instructions']))
-            with open(args.operand_kinds_output, 'w') as f:
-                f.write(generate_operand_kind_table(operand_kinds))
         if args.extension_enum_output is not None:
             make_path_to_file(args.extension_enum_output)
             with open(args.extension_enum_output, 'w') as f:
@@ -870,22 +856,6 @@ def main():
             with open(args.enum_string_mapping_output, 'w') as f:
                 f.write(generate_all_string_enum_mappings(
                     extensions, operand_kinds))
-
-    if args.extinst_glsl_grammar is not None:
-        with open(args.extinst_glsl_grammar) as json_file:
-            grammar = json.loads(json_file.read())
-            make_path_to_file(args.glsl_insts_output)
-            with open(args.glsl_insts_output, 'w') as f:
-                f.write(generate_extended_instruction_table(
-                    grammar, 'glsl'))
-
-    if args.extinst_opencl_grammar is not None:
-        with open(args.extinst_opencl_grammar) as json_file:
-            grammar = json.loads(json_file.read())
-            make_path_to_file(args.opencl_insts_output)
-            with open(args.opencl_insts_output, 'w') as f:
-                f.write(generate_extended_instruction_table(
-                    grammar, 'opencl'))
 
     if args.extinst_vendor_grammar is not None:
         with open(args.extinst_vendor_grammar) as json_file:

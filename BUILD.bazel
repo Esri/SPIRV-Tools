@@ -5,11 +5,8 @@ load(
     "DEBUGINFO_GRAMMAR_JSON_FILE",
     "SHDEBUGINFO100_GRAMMAR_JSON_FILE",
     "TEST_COPTS",
-    "generate_core_tables",
-    "generate_enum_string_mapping",
+    "generate_compressed_tables",
     "generate_extinst_lang_headers",
-    "generate_glsl_tables",
-    "generate_opencl_tables",
     "generate_vendor_tables",
     "incompatible_with",
 )
@@ -29,8 +26,27 @@ exports_files([
 ])
 
 py_binary(
+    # Generates tables for extensions and extended instruction sets.
+    # TODO(crbug.com/266223071) Replace this with ggt.py
     name = "generate_grammar_tables",
     srcs = ["utils/generate_grammar_tables.py"],
+)
+
+py_binary(
+    # The script that generates compressed grammar tables for
+    # instructions and operands.
+    # TODO(crbug.com/266223071) Eventually this will fully replace
+    # utils/generate_grammar_tables.py.
+    name = "ggt",
+    main = "utils/ggt.py", # The file found by $(location :ggt)
+    srcs = [
+        "utils/ggt.py",
+        "utils/Table/__init__.py",
+        "utils/Table/Context.py",
+        "utils/Table/IndexRange.py",
+        "utils/Table/Operand.py",
+        "utils/Table/StringList.py",
+    ],
 )
 
 py_binary(
@@ -38,13 +54,17 @@ py_binary(
     srcs = ["utils/generate_language_headers.py"],
 )
 
-generate_core_tables(version = "unified1")
+generate_compressed_tables()
 
-generate_enum_string_mapping(version = "unified1")
+generate_vendor_tables(
+   extension = "glsl.std.450",
+   target = "spirv_glsl_grammar_unified1"
+)
 
-generate_opencl_tables(version = "unified1")
-
-generate_glsl_tables(version = "unified1")
+generate_vendor_tables(
+   extension = "opencl.std.100",
+   target = "spirv_opencl_grammar_unified1"
+)
 
 generate_vendor_tables(extension = "spv-amd-shader-explicit-vertex-parameter")
 
@@ -110,7 +130,6 @@ genrule(
     outs = ["build-version.inc"],
     cmd = "SOURCE_DATE_EPOCH=0 $(location :update_build_version) $(location CHANGES) $(location build-version.inc)",
     cmd_bat = "set SOURCE_DATE_EPOCH=0  && $(location :update_build_version) $(location CHANGES) $(location build-version.inc)",
-    local = True,
     tools = [":update_build_version"],
 )
 
@@ -139,13 +158,12 @@ cc_library(
         "source/val/*.cpp",
     ]) + [
         ":build_version_inc",
-        ":gen_core_tables_unified1",
-        ":gen_enum_string_mapping",
+        ":gen_compressed_tables",
         ":gen_extinst_lang_headers_DebugInfo",
         ":gen_extinst_lang_headers_NonSemanticShaderDebugInfo100",
         ":gen_extinst_lang_headers_OpenCLDebugInfo100",
-        ":gen_glsl_tables_unified1",
-        ":gen_opencl_tables_unified1",
+        ":gen_vendor_tables_spirv_glsl_grammar_unified1",
+        ":gen_vendor_tables_spirv_opencl_grammar_unified1",
         ":gen_vendor_tables_debuginfo",
         ":gen_vendor_tables_nonsemantic_clspvreflection",
         ":gen_vendor_tables_nonsemantic_vkspreflection",
@@ -179,7 +197,6 @@ cc_library(
 cc_library(
     name = "spirv_tools_opt",
     hdrs = [
-        "include/spirv-tools/instrument.hpp",
         "include/spirv-tools/optimizer.hpp",
     ],
     copts = COMMON_COPTS,
@@ -197,13 +214,13 @@ cc_library(
         ":gen_vendor_tables_spv_amd_shader_ballot",
     ],
     hdrs = glob(["source/opt/*.h"]) + [
-        "include/spirv-tools/instrument.hpp",
         "include/spirv-tools/optimizer.hpp",
     ],
     copts = COMMON_COPTS,
     deps = [
         ":spirv_tools_internal",
         "@spirv_headers//:spirv_common_headers",
+        "@spirv_headers//:spirv_c_headers",
     ],
 )
 
@@ -272,6 +289,7 @@ cc_library(
 cc_library(
     name = "tools_io",
     hdrs = ["tools/io.h"],
+    srcs = ["tools/io.cpp"],
     copts = COMMON_COPTS,
 )
 
@@ -449,6 +467,7 @@ cc_library(
         "tools_util",
         ":spirv_tools_internal",
         ":test_lib",
+        ":tools_io",
         "@googletest//:gtest",
         "@googletest//:gtest_main",
     ],
@@ -498,8 +517,8 @@ cc_library(
         ":spirv_tools_internal",
         ":spirv_tools_link",
         ":test_lib",
-        "@com_google_effcee//:effcee",
-        "@com_googlesource_code_re2//:re2",
+        "@effcee//:effcee",
+        "@re2//:re2",
     ],
 )
 
@@ -552,7 +571,7 @@ cc_library(
     deps = [
         ":spirv_tools_internal",
         ":spirv_tools_opt_internal",
-        "@com_google_effcee//:effcee",
+        "@effcee//:effcee",
         "@googletest//:gtest",
     ],
 )
@@ -568,7 +587,7 @@ cc_library(
         ":spirv_tools_internal",
         ":spirv_tools_opt_internal",
         ":test_lib",
-        "@com_google_effcee//:effcee",
+        "@effcee//:effcee",
         "@googletest//:gtest",
         "@googletest//:gtest_main",
     ],
@@ -601,7 +620,7 @@ cc_library(
         ":opt_test_lib",
         ":spirv_tools",
         ":spirv_tools_opt_internal",
-        "@com_google_effcee//:effcee",
+        "@effcee//:effcee",
         "@googletest//:gtest",
         "@googletest//:gtest_main",
     ],

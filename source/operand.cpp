@@ -26,90 +26,8 @@
 #include "source/macro.h"
 #include "source/opcode.h"
 #include "source/spirv_constant.h"
-
-// For now, assume unified1 contains up to SPIR-V 1.3 and no later
-// SPIR-V version.
-// TODO(dneto): Make one set of tables, but with version tags on a
-// per-item basis. https://github.com/KhronosGroup/SPIRV-Tools/issues/1195
-
-#include "operand.kinds-unified1.inc"
+#include "source/table2.h"
 #include "spirv-tools/libspirv.h"
-
-static const spv_operand_table_t kOperandTable = {
-    ARRAY_SIZE(pygen_variable_OperandInfoTable),
-    pygen_variable_OperandInfoTable};
-
-spv_result_t spvOperandTableGet(spv_operand_table* pOperandTable,
-                                spv_target_env) {
-  if (!pOperandTable) return SPV_ERROR_INVALID_POINTER;
-
-  *pOperandTable = &kOperandTable;
-  return SPV_SUCCESS;
-}
-
-spv_result_t spvOperandTableNameLookup(spv_target_env,
-                                       const spv_operand_table table,
-                                       const spv_operand_type_t type,
-                                       const char* name,
-                                       const size_t nameLength,
-                                       spv_operand_desc* pEntry) {
-  if (!table) return SPV_ERROR_INVALID_TABLE;
-  if (!name || !pEntry) return SPV_ERROR_INVALID_POINTER;
-
-  for (uint64_t typeIndex = 0; typeIndex < table->count; ++typeIndex) {
-    const auto& group = table->types[typeIndex];
-    if (type != group.type) continue;
-    for (uint64_t index = 0; index < group.count; ++index) {
-      const auto& entry = group.entries[index];
-      // We consider the current operand as available as long as
-      // it is in the grammar.  It might not be *valid* to use,
-      // but that should be checked by the validator, not by parsing.
-      if (nameLength == strlen(entry.name) &&
-          !strncmp(entry.name, name, nameLength)) {
-        *pEntry = &entry;
-        return SPV_SUCCESS;
-      }
-    }
-  }
-
-  return SPV_ERROR_INVALID_LOOKUP;
-}
-
-spv_result_t spvOperandTableValueLookup(spv_target_env,
-                                        const spv_operand_table table,
-                                        const spv_operand_type_t type,
-                                        const uint32_t value,
-                                        spv_operand_desc* pEntry) {
-  if (!table) return SPV_ERROR_INVALID_TABLE;
-  if (!pEntry) return SPV_ERROR_INVALID_POINTER;
-
-  spv_operand_desc_t needle = {"", value, 0, nullptr, 0, nullptr, {}, ~0u, ~0u};
-
-  auto comp = [](const spv_operand_desc_t& lhs, const spv_operand_desc_t& rhs) {
-    return lhs.value < rhs.value;
-  };
-
-  for (uint64_t typeIndex = 0; typeIndex < table->count; ++typeIndex) {
-    const auto& group = table->types[typeIndex];
-    if (type != group.type) continue;
-
-    const auto beg = group.entries;
-    const auto end = group.entries + group.count;
-
-    // Assumes the underlying table is already sorted ascendingly according to
-    // opcode value.
-    auto it = std::lower_bound(beg, end, needle, comp);
-    if (it != end && it->value == value) {
-      // The current operand is considered available as long as
-      // it is in the grammar.  It might not be *valid* to use,
-      // but that should be checked by the validator, not by parsing.
-      *pEntry = it;
-      return SPV_SUCCESS;
-    }
-  }
-
-  return SPV_ERROR_INVALID_LOOKUP;
-}
 
 const char* spvOperandTypeStr(spv_operand_type_t type) {
   switch (type) {
@@ -212,6 +130,15 @@ const char* spvOperandTypeStr(spv_operand_type_t type) {
       return "cooperative matrix layout";
     case SPV_OPERAND_TYPE_COOPERATIVE_MATRIX_USE:
       return "cooperative matrix use";
+    case SPV_OPERAND_TYPE_TENSOR_CLAMP_MODE:
+      return "tensor clamp mode";
+    case SPV_OPERAND_TYPE_COOPERATIVE_MATRIX_REDUCE:
+      return "cooperative matrix reduce";
+    case SPV_OPERAND_TYPE_TENSOR_ADDRESSING_OPERANDS:
+      return "tensor addressing operands";
+    case SPV_OPERAND_TYPE_MATRIX_MULTIPLY_ACCUMULATE_OPERANDS:
+    case SPV_OPERAND_TYPE_OPTIONAL_MATRIX_MULTIPLY_ACCUMULATE_OPERANDS:
+      return "matrix multiply accumulate operands";
     case SPV_OPERAND_TYPE_INITIALIZATION_MODE_QUALIFIER:
       return "initialization mode qualifier";
     case SPV_OPERAND_TYPE_HOST_ACCESS_QUALIFIER:
@@ -252,6 +179,9 @@ const char* spvOperandTypeStr(spv_operand_type_t type) {
       return "OpenCL.DebugInfo.100 debug operation";
     case SPV_OPERAND_TYPE_CLDEBUG100_DEBUG_IMPORTED_ENTITY:
       return "OpenCL.DebugInfo.100 debug imported entity";
+    case SPV_OPERAND_TYPE_FPENCODING:
+    case SPV_OPERAND_TYPE_OPTIONAL_FPENCODING:
+      return "FP encoding";
 
     // The next values are for values returned from an instruction, not actually
     // an operand.  So the specific strings don't matter.  But let's add them
@@ -269,6 +199,10 @@ const char* spvOperandTypeStr(spv_operand_type_t type) {
       return "quantization mode";
     case SPV_OPERAND_TYPE_OVERFLOW_MODES:
       return "overflow mode";
+    case SPV_OPERAND_TYPE_COOPERATIVE_VECTOR_MATRIX_LAYOUT:
+      return "cooperative vector matrix layout";
+    case SPV_OPERAND_TYPE_COMPONENT_TYPE:
+      return "component type";
 
     case SPV_OPERAND_TYPE_NONE:
       return "NONE";
@@ -280,6 +214,7 @@ const char* spvOperandTypeStr(spv_operand_type_t type) {
 
 void spvPushOperandTypes(const spv_operand_type_t* types,
                          spv_operand_pattern_t* pattern) {
+  // Push them on in backward order.
   const spv_operand_type_t* endTypes;
   for (endTypes = types; *endTypes != SPV_OPERAND_TYPE_NONE; ++endTypes) {
   }
@@ -289,9 +224,22 @@ void spvPushOperandTypes(const spv_operand_type_t* types,
   }
 }
 
-void spvPushOperandTypesForMask(spv_target_env env,
-                                const spv_operand_table operandTable,
-                                const spv_operand_type_t type,
+void spvPushOperandTypes(
+    const spvtools::utils::Span<const spv_operand_type_t>& types,
+    spv_operand_pattern_t* pattern) {
+  // Push them on in backward order.
+  auto n = types.size();
+  for (auto i = 0u; i < n; i++) {
+    auto type = types[n - 1 - i];
+    // Check against the NONE type, in case the tables have them.
+    // This might be cleaned up.
+    if (type != SPV_OPERAND_TYPE_NONE) {
+      pattern->push_back(type);
+    }
+  }
+}
+
+void spvPushOperandTypesForMask(const spv_operand_type_t type,
                                 const uint32_t mask,
                                 spv_operand_pattern_t* pattern) {
   // Scan from highest bits to lowest bits because we will append in LIFO
@@ -299,10 +247,9 @@ void spvPushOperandTypesForMask(spv_target_env env,
   for (uint32_t candidate_bit = (1u << 31u); candidate_bit;
        candidate_bit >>= 1) {
     if (candidate_bit & mask) {
-      spv_operand_desc entry = nullptr;
-      if (SPV_SUCCESS == spvOperandTableValueLookup(env, operandTable, type,
-                                                    candidate_bit, &entry)) {
-        spvPushOperandTypes(entry->operandTypes, pattern);
+      const spvtools::OperandDesc* entry = nullptr;
+      if (SPV_SUCCESS == spvtools::LookupOperand(type, candidate_bit, &entry)) {
+        spvPushOperandTypes(entry->operands(), pattern);
       }
     }
   }
@@ -366,6 +313,10 @@ bool spvOperandIsConcrete(spv_operand_type_t type) {
     case SPV_OPERAND_TYPE_LOAD_CACHE_CONTROL:
     case SPV_OPERAND_TYPE_STORE_CACHE_CONTROL:
     case SPV_OPERAND_TYPE_NAMED_MAXIMUM_NUMBER_OF_REGISTERS:
+    case SPV_OPERAND_TYPE_FPENCODING:
+    case SPV_OPERAND_TYPE_TENSOR_CLAMP_MODE:
+    case SPV_OPERAND_TYPE_COOPERATIVE_VECTOR_MATRIX_LAYOUT:
+    case SPV_OPERAND_TYPE_COMPONENT_TYPE:
       return true;
     default:
       break;
@@ -385,7 +336,10 @@ bool spvOperandIsConcreteMask(spv_operand_type_t type) {
     case SPV_OPERAND_TYPE_DEBUG_INFO_FLAGS:
     case SPV_OPERAND_TYPE_CLDEBUG100_DEBUG_INFO_FLAGS:
     case SPV_OPERAND_TYPE_COOPERATIVE_MATRIX_OPERANDS:
+    case SPV_OPERAND_TYPE_MATRIX_MULTIPLY_ACCUMULATE_OPERANDS:
     case SPV_OPERAND_TYPE_RAW_ACCESS_CHAIN_OPERANDS:
+    case SPV_OPERAND_TYPE_COOPERATIVE_MATRIX_REDUCE:
+    case SPV_OPERAND_TYPE_TENSOR_ADDRESSING_OPERANDS:
       return true;
     default:
       break;
@@ -405,8 +359,10 @@ bool spvOperandIsOptional(spv_operand_type_t type) {
     case SPV_OPERAND_TYPE_OPTIONAL_ACCESS_QUALIFIER:
     case SPV_OPERAND_TYPE_OPTIONAL_PACKED_VECTOR_FORMAT:
     case SPV_OPERAND_TYPE_OPTIONAL_COOPERATIVE_MATRIX_OPERANDS:
+    case SPV_OPERAND_TYPE_OPTIONAL_MATRIX_MULTIPLY_ACCUMULATE_OPERANDS:
     case SPV_OPERAND_TYPE_OPTIONAL_CIV:
     case SPV_OPERAND_TYPE_OPTIONAL_RAW_ACCESS_CHAIN_OPERANDS:
+    case SPV_OPERAND_TYPE_OPTIONAL_FPENCODING:
       return true;
     default:
       break;
@@ -574,6 +530,16 @@ std::function<bool(unsigned)> spvOperandCanBeForwardDeclaredFunction(
     case spv::Op::OpTypeArray:
       out = [](unsigned index) { return index == 1; };
       break;
+    case spv::Op::OpCooperativeMatrixPerElementOpNV:
+      out = [](unsigned index) { return index == 3; };
+      break;
+    case spv::Op::OpCooperativeMatrixReduceNV:
+      out = [](unsigned index) { return index == 4; };
+      break;
+    case spv::Op::OpCooperativeMatrixLoadTensorNV:
+      // approximate, due to variable operands
+      out = [](unsigned index) { return index > 6; };
+      break;
     default:
       out = [](unsigned) { return false; };
       break;
@@ -582,11 +548,13 @@ std::function<bool(unsigned)> spvOperandCanBeForwardDeclaredFunction(
 }
 
 std::function<bool(unsigned)> spvDbgInfoExtOperandCanBeForwardDeclaredFunction(
-    spv_ext_inst_type_t ext_type, uint32_t key) {
+    spv::Op opcode, spv_ext_inst_type_t ext_type, uint32_t key) {
   // The Vulkan debug info extended instruction set is non-semantic so allows no
-  // forward references ever
+  // forward references except if used through OpExtInstWithForwardRefsKHR.
   if (ext_type == SPV_EXT_INST_TYPE_NONSEMANTIC_SHADER_DEBUGINFO_100) {
-    return [](unsigned) { return false; };
+    return [opcode](unsigned) {
+      return opcode == spv::Op::OpExtInstWithForwardRefsKHR;
+    };
   }
 
   // TODO(https://gitlab.khronos.org/spirv/SPIR-V/issues/532): Forward

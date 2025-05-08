@@ -13,61 +13,32 @@
 # limitations under the License.
 
 set(GRAMMAR_PROCESSING_SCRIPT "${spirv-tools_SOURCE_DIR}/utils/generate_grammar_tables.py")
-set(VIMSYNTAX_PROCESSING_SCRIPT "${spirv-tools_SOURCE_DIR}/utils/generate_vim_syntax.py")
+set(VIMSYNTAX_PROCESSING_SCRIPT "${spirv-tools_SOURCE_DIR}/utils/vim/generate_syntax.py")
 set(XML_REGISTRY_PROCESSING_SCRIPT "${spirv-tools_SOURCE_DIR}/utils/generate_registry_tables.py")
 set(LANG_HEADER_PROCESSING_SCRIPT "${spirv-tools_SOURCE_DIR}/utils/generate_language_headers.py")
+set(GGT_SCRIPT "${spirv-tools_SOURCE_DIR}/utils/ggt.py")
 
 # Pull in grammar files that have migrated to SPIRV-Headers
+set(SPIRV_CORE_GRAMMAR_JSON_FILE "${SPIRV_HEADER_INCLUDE_DIR}/spirv/unified1/spirv.core.grammar.json")
 set(DEBUGINFO_GRAMMAR_JSON_FILE "${SPIRV_HEADER_INCLUDE_DIR}/spirv/unified1/extinst.debuginfo.grammar.json")
 set(CLDEBUGINFO100_GRAMMAR_JSON_FILE "${SPIRV_HEADER_INCLUDE_DIR}/spirv/unified1/extinst.opencl.debuginfo.100.grammar.json")
 set(VKDEBUGINFO100_GRAMMAR_JSON_FILE "${SPIRV_HEADER_INCLUDE_DIR}/spirv/unified1/extinst.nonsemantic.shader.debuginfo.100.grammar.json")
 
-# macro() definitions are used in the following because we need to append .inc
-# file paths into some global lists (*_CPP_DEPENDS). And those global lists are
-# later used by set_source_files_properties() calls.
-# function() definitions are not suitable because they create new scopes.
-macro(spvtools_core_tables CONFIG_VERSION)
-  set(GRAMMAR_JSON_FILE "${SPIRV_HEADER_INCLUDE_DIR}/spirv/${CONFIG_VERSION}/spirv.core.grammar.json")
-  set(GRAMMAR_INSTS_INC_FILE "${spirv-tools_BINARY_DIR}/core.insts-${CONFIG_VERSION}.inc")
-  set(GRAMMAR_KINDS_INC_FILE "${spirv-tools_BINARY_DIR}/operand.kinds-${CONFIG_VERSION}.inc")
-  add_custom_command(OUTPUT ${GRAMMAR_INSTS_INC_FILE} ${GRAMMAR_KINDS_INC_FILE}
-    COMMAND Python3::Interpreter ${GRAMMAR_PROCESSING_SCRIPT}
-      --spirv-core-grammar=${GRAMMAR_JSON_FILE}
+set(CORE_TABLES_BODY_INC_FILE ${spirv-tools_BINARY_DIR}/core_tables_body.inc)
+set(CORE_TABLES_HEADER_INC_FILE ${spirv-tools_BINARY_DIR}/core_tables_header.inc)
+add_custom_command(OUTPUT ${CORE_TABLES_BODY_INC_FILE} ${CORE_TABLES_HEADER_INC_FILE}
+    COMMAND Python3::Interpreter ${GGT_SCRIPT}
+      --spirv-core-grammar=${SPIRV_CORE_GRAMMAR_JSON_FILE}
       --extinst-debuginfo-grammar=${DEBUGINFO_GRAMMAR_JSON_FILE}
       --extinst-cldebuginfo100-grammar=${CLDEBUGINFO100_GRAMMAR_JSON_FILE}
-      --core-insts-output=${GRAMMAR_INSTS_INC_FILE}
-      --operand-kinds-output=${GRAMMAR_KINDS_INC_FILE}
-      --output-language=c++
-    DEPENDS ${GRAMMAR_PROCESSING_SCRIPT}
-            ${GRAMMAR_JSON_FILE}
+      --core-tables-body-output=${CORE_TABLES_BODY_INC_FILE}
+      --core-tables-header-output=${CORE_TABLES_HEADER_INC_FILE}
+    DEPENDS ${GGT_SCRIPT}
+            ${SPIRV_CORE_GRAMMAR_JSON_FILE}
             ${DEBUGINFO_GRAMMAR_JSON_FILE}
             ${CLDEBUGINFO100_GRAMMAR_JSON_FILE}
-    COMMENT "Generate info tables for SPIR-V v${CONFIG_VERSION} core instructions and operands.")
-  list(APPEND OPCODE_CPP_DEPENDS ${GRAMMAR_INSTS_INC_FILE})
-  list(APPEND OPERAND_CPP_DEPENDS ${GRAMMAR_KINDS_INC_FILE})
-endmacro(spvtools_core_tables)
-
-macro(spvtools_enum_string_mapping CONFIG_VERSION)
-  set(GRAMMAR_JSON_FILE "${SPIRV_HEADER_INCLUDE_DIR}/spirv/${CONFIG_VERSION}/spirv.core.grammar.json")
-  set(GRAMMAR_EXTENSION_ENUM_INC_FILE "${spirv-tools_BINARY_DIR}/extension_enum.inc")
-  set(GRAMMAR_ENUM_STRING_MAPPING_INC_FILE "${spirv-tools_BINARY_DIR}/enum_string_mapping.inc")
-  add_custom_command(OUTPUT ${GRAMMAR_EXTENSION_ENUM_INC_FILE}
-     ${GRAMMAR_ENUM_STRING_MAPPING_INC_FILE}
-    COMMAND Python3::Interpreter ${GRAMMAR_PROCESSING_SCRIPT}
-      --spirv-core-grammar=${GRAMMAR_JSON_FILE}
-      --extinst-debuginfo-grammar=${DEBUGINFO_GRAMMAR_JSON_FILE}
-      --extinst-cldebuginfo100-grammar=${CLDEBUGINFO100_GRAMMAR_JSON_FILE}
-      --extension-enum-output=${GRAMMAR_EXTENSION_ENUM_INC_FILE}
-      --enum-string-mapping-output=${GRAMMAR_ENUM_STRING_MAPPING_INC_FILE}
-      --output-language=c++
-    DEPENDS ${GRAMMAR_PROCESSING_SCRIPT}
-            ${GRAMMAR_JSON_FILE}
-            ${DEBUGINFO_GRAMMAR_JSON_FILE}
-            ${CLDEBUGINFO100_GRAMMAR_JSON_FILE}
-    COMMENT "Generate enum-string mapping for SPIR-V v${CONFIG_VERSION}.")
-  list(APPEND EXTENSION_H_DEPENDS ${GRAMMAR_EXTENSION_ENUM_INC_FILE})
-  list(APPEND ENUM_STRING_MAPPING_CPP_DEPENDS ${GRAMMAR_ENUM_STRING_MAPPING_INC_FILE})
-endmacro(spvtools_enum_string_mapping)
+    COMMENT "Generate core tables")
+add_custom_target(spirv-tools-tables DEPENDS ${CORE_TABLES_BODY_INC_FILE} ${CORE_TABLES_HEADER_INC_FILE})
 
 macro(spvtools_vimsyntax CONFIG_VERSION CLVERSION)
   set(GRAMMAR_JSON_FILE "${SPIRV_HEADER_INCLUDE_DIR}/spirv/${CONFIG_VERSION}/spirv.core.grammar.json")
@@ -85,33 +56,6 @@ macro(spvtools_vimsyntax CONFIG_VERSION CLVERSION)
             ${GLSL_GRAMMAR_JSON_FILE} ${OPENCL_GRAMMAR_JSON_FILE} ${DEBUGINFO_GRAMMAR_JSON_FILE}
     COMMENT "Generate spvasm.vim: Vim syntax file for SPIR-V assembly.")
 endmacro(spvtools_vimsyntax)
-
-macro(spvtools_glsl_tables CONFIG_VERSION)
-  set(CORE_GRAMMAR_JSON_FILE "${SPIRV_HEADER_INCLUDE_DIR}/spirv/${CONFIG_VERSION}/spirv.core.grammar.json")
-  set(GLSL_GRAMMAR_JSON_FILE "${SPIRV_HEADER_INCLUDE_DIR}/spirv/${CONFIG_VERSION}/extinst.glsl.std.450.grammar.json")
-  set(GRAMMAR_INC_FILE "${spirv-tools_BINARY_DIR}/glsl.std.450.insts.inc")
-  add_custom_command(OUTPUT ${GRAMMAR_INC_FILE}
-    COMMAND Python3::Interpreter ${GRAMMAR_PROCESSING_SCRIPT}
-      --extinst-glsl-grammar=${GLSL_GRAMMAR_JSON_FILE}
-      --glsl-insts-output=${GRAMMAR_INC_FILE}
-      --output-language=c++
-    DEPENDS ${GRAMMAR_PROCESSING_SCRIPT} ${CORE_GRAMMAR_JSON_FILE} ${GLSL_GRAMMAR_JSON_FILE}
-    COMMENT "Generate info tables for GLSL extended instructions and operands v${CONFIG_VERSION}.")
-  list(APPEND EXTINST_CPP_DEPENDS ${GRAMMAR_INC_FILE})
-endmacro(spvtools_glsl_tables)
-
-macro(spvtools_opencl_tables CONFIG_VERSION)
-  set(CORE_GRAMMAR_JSON_FILE "${SPIRV_HEADER_INCLUDE_DIR}/spirv/${CONFIG_VERSION}/spirv.core.grammar.json")
-  set(OPENCL_GRAMMAR_JSON_FILE "${SPIRV_HEADER_INCLUDE_DIR}/spirv/${CONFIG_VERSION}/extinst.opencl.std.100.grammar.json")
-  set(GRAMMAR_INC_FILE "${spirv-tools_BINARY_DIR}/opencl.std.insts.inc")
-  add_custom_command(OUTPUT ${GRAMMAR_INC_FILE}
-    COMMAND Python3::Interpreter ${GRAMMAR_PROCESSING_SCRIPT}
-      --extinst-opencl-grammar=${OPENCL_GRAMMAR_JSON_FILE}
-      --opencl-insts-output=${GRAMMAR_INC_FILE}
-    DEPENDS ${GRAMMAR_PROCESSING_SCRIPT} ${CORE_GRAMMAR_JSON_FILE} ${OPENCL_GRAMMAR_JSON_FILE}
-    COMMENT "Generate info tables for OpenCL extended instructions and operands v${CONFIG_VERSION}.")
-  list(APPEND EXTINST_CPP_DEPENDS ${GRAMMAR_INC_FILE})
-endmacro(spvtools_opencl_tables)
 
 macro(spvtools_vendor_tables VENDOR_TABLE SHORT_NAME OPERAND_KIND_PREFIX)
   set(INSTS_FILE "${spirv-tools_BINARY_DIR}/${VENDOR_TABLE}.insts.inc")
@@ -144,10 +88,8 @@ macro(spvtools_extinst_lang_headers NAME GRAMMAR_FILE)
   list(APPEND EXTINST_CPP_DEPENDS spirv-tools-header-${NAME})
 endmacro(spvtools_extinst_lang_headers)
 
-spvtools_core_tables("unified1")
-spvtools_enum_string_mapping("unified1")
-spvtools_opencl_tables("unified1")
-spvtools_glsl_tables("unified1")
+spvtools_vendor_tables("glsl.std.450" "glsl" "")
+spvtools_vendor_tables("opencl.std.100" "opencl" "")
 spvtools_vendor_tables("spv-amd-shader-explicit-vertex-parameter" "spv-amd-sevp" "")
 spvtools_vendor_tables("spv-amd-shader-trinary-minmax" "spv-amd-stm" "")
 spvtools_vendor_tables("spv-amd-gcn-shader" "spv-amd-gs" "")
@@ -182,9 +124,9 @@ list(APPEND OPCODE_CPP_DEPENDS ${GENERATOR_INC_FILE})
 # We need to wrap the .inc files with a custom target to avoid problems when
 # multiple targets depend on the same custom command.
 add_custom_target(core_tables
-  DEPENDS ${OPCODE_CPP_DEPENDS} ${OPERAND_CPP_DEPENDS})
-add_custom_target(enum_string_mapping
-  DEPENDS ${EXTENSION_H_DEPENDS} ${ENUM_STRING_MAPPING_CPP_DEPENDS})
+	DEPENDS ${OPCODE_CPP_DEPENDS}
+	        ${CORE_TABLES_BODY_INC_FILE}
+		${CORE_TABLES_HEADER_INC_FILE})
 add_custom_target(extinst_tables
   DEPENDS ${EXTINST_CPP_DEPENDS})
 
@@ -211,7 +153,11 @@ add_custom_target(spirv-tools-build-version
    DEPENDS ${SPIRV_TOOLS_BUILD_VERSION_INC})
 set_property(TARGET spirv-tools-build-version PROPERTY FOLDER "SPIRV-Tools build")
 
-list(APPEND PCH_DEPENDS ${ENUM_STRING_MAPPING_CPP_DEPENDS} ${OPCODE_CPP_DEPENDS} ${OPERAND_CPP_DEPENDS} ${EXTENSION_H_DEPENDS} ${EXTINST_CPP_DEPENDS} ${SPIRV_TOOLS_BUILD_VERSION_INC})
+list(APPEND PCH_DEPENDS
+	${CORE_TABLES_HEADER_INC_FILE}
+	${OPCODE_CPP_DEPENDS}
+	${EXTINST_CPP_DEPENDS}
+	${SPIRV_TOOLS_BUILD_VERSION_INC})
 set_source_files_properties(
   ${CMAKE_CURRENT_SOURCE_DIR}/pch_source.cpp
   PROPERTIES OBJECT_DEPENDS "${PCH_DEPENDS}")
@@ -242,7 +188,6 @@ set(SPIRV_SOURCES
   ${CMAKE_CURRENT_SOURCE_DIR}/diagnostic.h
   ${CMAKE_CURRENT_SOURCE_DIR}/disassemble.h
   ${CMAKE_CURRENT_SOURCE_DIR}/enum_set.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/enum_string_mapping.h
   ${CMAKE_CURRENT_SOURCE_DIR}/ext_inst.h
   ${CMAKE_CURRENT_SOURCE_DIR}/extensions.h
   ${CMAKE_CURRENT_SOURCE_DIR}/instruction.h
@@ -264,8 +209,10 @@ set(SPIRV_SOURCES
   ${CMAKE_CURRENT_SOURCE_DIR}/spirv_target_env.h
   ${CMAKE_CURRENT_SOURCE_DIR}/spirv_validator_options.h
   ${CMAKE_CURRENT_SOURCE_DIR}/table.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/table2.h
   ${CMAKE_CURRENT_SOURCE_DIR}/text.h
   ${CMAKE_CURRENT_SOURCE_DIR}/text_handler.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/to_string.h
   ${CMAKE_CURRENT_SOURCE_DIR}/val/validate.h
 
   ${CMAKE_CURRENT_SOURCE_DIR}/util/bit_vector.cpp
@@ -275,7 +222,6 @@ set(SPIRV_SOURCES
   ${CMAKE_CURRENT_SOURCE_DIR}/binary.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/diagnostic.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/disassemble.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/enum_string_mapping.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/ext_inst.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/extensions.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/libspirv.cpp
@@ -292,8 +238,10 @@ set(SPIRV_SOURCES
   ${CMAKE_CURRENT_SOURCE_DIR}/spirv_target_env.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/spirv_validator_options.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/table.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/table2.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/text.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/text_handler.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/to_string.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/val/validate.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/val/validate_adjacency.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/val/validate_annotation.cpp
@@ -332,7 +280,9 @@ set(SPIRV_SOURCES
   ${CMAKE_CURRENT_SOURCE_DIR}/val/validate_ray_tracing_reorder.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/val/validate_scopes.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/val/validate_small_type_uses.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/val/validate_tensor_layout.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/val/validate_type.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/val/validate_invalid_type.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/val/decoration.h
   ${CMAKE_CURRENT_SOURCE_DIR}/val/basic_block.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/val/construct.cpp
@@ -376,7 +326,7 @@ function(spirv_tools_default_target_options target)
   )
   set_property(TARGET ${target} PROPERTY FOLDER "SPIRV-Tools libraries")
   spvtools_check_symbol_exports(${target})
-  add_dependencies(${target} spirv-tools-build-version core_tables enum_string_mapping extinst_tables)
+  add_dependencies(${target} spirv-tools-build-version core_tables extinst_tables)
 endfunction()
 
 # Always build ${SPIRV_TOOLS}-shared. This is expected distro packages, and

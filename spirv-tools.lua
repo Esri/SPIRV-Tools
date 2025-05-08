@@ -18,13 +18,11 @@ if (os.is("windows")) then
   PYTHON_EXE = "C:/rtc/python/3.12/Scripts/python"
 end
 
-os.execute(PYTHON_EXE.." "..SPIRV_TOOLS_SRC_DIR.."/utils/generate_grammar_tables.py --spirv-core-grammar="..SPIRV_HEADERS_SRC_DIR.."/include/spirv/unified1/spirv.core.grammar.json --extinst-debuginfo-grammar="..SPIRV_HEADERS_SRC_DIR.."/include/spirv/unified1/extinst.debuginfo.grammar.json --extinst-cldebuginfo100-grammar="..SPIRV_HEADERS_SRC_DIR.."/include/spirv/unified1/extinst.opencl.debuginfo.100.grammar.json --core-insts-output="..SPIRV_TOOLS_GEN_OUTPUT_DIR.."/core.insts-unified1.inc --operand-kinds-output="..SPIRV_TOOLS_GEN_OUTPUT_DIR.."/operand.kinds-unified1.inc --output-language=c++")
+os.execute(PYTHON_EXE.." "..SPIRV_TOOLS_SRC_DIR.."/utils/ggt.py --spirv-core-grammar="..SPIRV_HEADERS_SRC_DIR.."/include/spirv/unified1/spirv.core.grammar.json --extinst-debuginfo-grammar="..SPIRV_HEADERS_SRC_DIR.."/include/spirv/unified1/extinst.debuginfo.grammar.json --extinst-cldebuginfo100-grammar="..SPIRV_HEADERS_SRC_DIR.."/include/spirv/unified1/extinst.opencl.debuginfo.100.grammar.json --core-tables-body-output="..SPIRV_TOOLS_GEN_OUTPUT_DIR.."/core_tables_body.inc --core-tables-header-output="..SPIRV_TOOLS_GEN_OUTPUT_DIR.."/core_tables_header.inc")
 
-os.execute(PYTHON_EXE.." "..SPIRV_TOOLS_SRC_DIR.."/utils/generate_grammar_tables.py --spirv-core-grammar="..SPIRV_HEADERS_SRC_DIR.."/include/spirv/unified1/spirv.core.grammar.json --extinst-debuginfo-grammar="..SPIRV_HEADERS_SRC_DIR.."/include/spirv/unified1/extinst.debuginfo.grammar.json --extinst-cldebuginfo100-grammar="..SPIRV_HEADERS_SRC_DIR.."/include/spirv/unified1/extinst.opencl.debuginfo.100.grammar.json --extension-enum-output="..SPIRV_TOOLS_GEN_OUTPUT_DIR.."/extension_enum.inc --enum-string-mapping-output="..SPIRV_TOOLS_GEN_OUTPUT_DIR.."/enum_string_mapping.inc --output-language=c++")
+os.execute(PYTHON_EXE.." "..SPIRV_TOOLS_SRC_DIR.."/utils/generate_grammar_tables.py --extinst-vendor-grammar="..SPIRV_HEADERS_SRC_DIR.."/include/spirv/unified1/extinst.opencl.std.100.grammar.json --vendor-insts-output="..SPIRV_TOOLS_GEN_OUTPUT_DIR.."/opencl.std.100.insts.inc --vendor-operand-kind-prefix=")
 
-os.execute(PYTHON_EXE.." "..SPIRV_TOOLS_SRC_DIR.."/utils/generate_grammar_tables.py --extinst-opencl-grammar="..SPIRV_HEADERS_SRC_DIR.."/include/spirv/unified1/extinst.opencl.std.100.grammar.json --opencl-insts-output="..SPIRV_TOOLS_GEN_OUTPUT_DIR.."/opencl.std.insts.inc")
-
-os.execute(PYTHON_EXE.." "..SPIRV_TOOLS_SRC_DIR.."/utils/generate_grammar_tables.py --extinst-glsl-grammar="..SPIRV_HEADERS_SRC_DIR.."/include/spirv/unified1/extinst.glsl.std.450.grammar.json --glsl-insts-output="..SPIRV_TOOLS_GEN_OUTPUT_DIR.."/glsl.std.450.insts.inc --output-language=c++")
+os.execute(PYTHON_EXE.." "..SPIRV_TOOLS_SRC_DIR.."/utils/generate_grammar_tables.py --extinst-vendor-grammar="..SPIRV_HEADERS_SRC_DIR.."/include/spirv/unified1/extinst.glsl.std.450.grammar.json --vendor-insts-output="..SPIRV_TOOLS_GEN_OUTPUT_DIR.."/glsl.std.450.insts.inc --vendor-operand-kind-prefix=")
 
 os.execute(PYTHON_EXE.." "..SPIRV_TOOLS_SRC_DIR.."/utils/generate_grammar_tables.py --extinst-vendor-grammar="..SPIRV_HEADERS_SRC_DIR.."/include/spirv/unified1/extinst.spv-amd-shader-explicit-vertex-parameter.grammar.json --vendor-insts-output="..SPIRV_TOOLS_GEN_OUTPUT_DIR.."/spv-amd-shader-explicit-vertex-parameter.insts.inc --vendor-operand-kind-prefix=")
 
@@ -70,7 +68,6 @@ files {
   "source/binary.cpp",
   "source/diagnostic.cpp",
   "source/disassemble.cpp",
-  "source/enum_string_mapping.cpp",
   "source/ext_inst.cpp",
   "source/extensions.cpp",
   "source/libspirv.cpp",
@@ -87,8 +84,10 @@ files {
   "source/spirv_target_env.cpp",
   "source/spirv_validator_options.cpp",
   "source/table.cpp",
+  "source/table2.cpp",
   "source/text.cpp",
   "source/text_handler.cpp",
+  "source/to_string.cpp",
 
   "source/opt/fix_func_call_arguments.cpp",
   "source/opt/aggressive_dead_code_elim_pass.cpp",
@@ -141,10 +140,8 @@ files {
   "source/opt/inline_exhaustive_pass.cpp",
   "source/opt/inline_opaque_pass.cpp",
   "source/opt/inline_pass.cpp",
-  "source/opt/inst_debug_printf_pass.cpp",
   "source/opt/instruction.cpp",
   "source/opt/instruction_list.cpp",
-  "source/opt/instrument_pass.cpp",
   "source/opt/interface_var_sroa.cpp",
   "source/opt/invocation_interlock_placement_pass.cpp",
   "source/opt/interp_fixup_pass.cpp",
@@ -170,6 +167,7 @@ files {
   "source/opt/merge_return_pass.cpp",
   "source/opt/modify_maximal_reconvergence.cpp",
   "source/opt/module.cpp",
+  "source/opt/opextinst_forward_ref_fixup_pass.cpp",
   "source/opt/optimizer.cpp",
   "source/opt/pass.cpp",
   "source/opt/pass_manager.cpp",
@@ -184,17 +182,20 @@ files {
   "source/opt/remove_unused_interface_variables_pass.cpp",
   "source/opt/replace_desc_array_access_using_var_index.cpp",
   "source/opt/replace_invalid_opc.cpp",
+  "source/opt/resolve_binding_conflicts_pass.cpp",
   "source/opt/scalar_analysis.cpp",
   "source/opt/scalar_analysis_simplification.cpp",
   "source/opt/scalar_replacement_pass.cpp",
   "source/opt/set_spec_constant_default_value_pass.cpp",
   "source/opt/simplification_pass.cpp",
+  "source/opt/split_combined_image_sampler_pass.cpp",
   "source/opt/spread_volatile_semantics.cpp",
   "source/opt/ssa_rewrite_pass.cpp",
   "source/opt/strength_reduction_pass.cpp",
   "source/opt/strip_debug_info_pass.cpp",
   "source/opt/strip_nonsemantic_info_pass.cpp",
   "source/opt/struct_cfg_analysis.cpp",
+  "source/opt/struct_packing_pass.cpp",
   "source/opt/switch_descriptorset_pass.cpp",
   "source/opt/trim_capabilities_pass.cpp",
   "source/opt/type_manager.cpp",
@@ -229,6 +230,7 @@ files {
   "source/val/validate_image.cpp",
   "source/val/validate_interfaces.cpp",
   "source/val/validate_instruction.cpp",
+  "source/val/validate_invalid_type.cpp",
   "source/val/validate_layout.cpp",
   "source/val/validate_literals.cpp",
   "source/val/validate_logicals.cpp",
@@ -244,6 +246,7 @@ files {
   "source/val/validate_ray_tracing_reorder.cpp",
   "source/val/validate_scopes.cpp",
   "source/val/validate_small_type_uses.cpp",
+  "source/val/validate_tensor_layout.cpp",
   "source/val/validate_type.cpp",
   "source/val/basic_block_rtc_shim.cpp",
   "source/val/construct.cpp",
