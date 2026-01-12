@@ -18,29 +18,26 @@ if (os.is("windows")) then
   PYTHON_EXE = "C:/rtc/python/3.12/Scripts/python"
 end
 
-os.execute(PYTHON_EXE.." "..SPIRV_TOOLS_SRC_DIR.."/utils/ggt.py --spirv-core-grammar="..SPIRV_HEADERS_SRC_DIR.."/include/spirv/unified1/spirv.core.grammar.json --extinst-debuginfo-grammar="..SPIRV_HEADERS_SRC_DIR.."/include/spirv/unified1/extinst.debuginfo.grammar.json --extinst-cldebuginfo100-grammar="..SPIRV_HEADERS_SRC_DIR.."/include/spirv/unified1/extinst.opencl.debuginfo.100.grammar.json --core-tables-body-output="..SPIRV_TOOLS_GEN_OUTPUT_DIR.."/core_tables_body.inc --core-tables-header-output="..SPIRV_TOOLS_GEN_OUTPUT_DIR.."/core_tables_header.inc")
+command_parts = {
+  PYTHON_EXE.." "..SPIRV_TOOLS_SRC_DIR.."/utils/ggt.py --spirv-core-grammar="..SPIRV_HEADERS_SRC_DIR.."/include/spirv/unified1/spirv.core.grammar.json",
+  "--extinst=,"..SPIRV_HEADERS_SRC_DIR.."/include/spirv/unified1/extinst.glsl.std.450.grammar.json",
+  "--extinst=,"..SPIRV_HEADERS_SRC_DIR.."/include/spirv/unified1/extinst.spv-amd-shader-explicit-vertex-parameter.grammar.json",
+  "--extinst=,"..SPIRV_HEADERS_SRC_DIR.."/include/spirv/unified1/extinst.spv-amd-shader-trinary-minmax.grammar.json",
+  "--extinst=,"..SPIRV_HEADERS_SRC_DIR.."/include/spirv/unified1/extinst.spv-amd-gcn-shader.grammar.json",
+  "--extinst=,"..SPIRV_HEADERS_SRC_DIR.."/include/spirv/unified1/extinst.spv-amd-shader-ballot.grammar.json",
+  "--extinst=,"..SPIRV_HEADERS_SRC_DIR.."/include/spirv/unified1/extinst.debuginfo.grammar.json",
+  "--extinst=CLDEBUG100_,"..SPIRV_HEADERS_SRC_DIR.."/include/spirv/unified1/extinst.opencl.debuginfo.100.grammar.json",
+  "--extinst=SHDEBUG100_,"..SPIRV_HEADERS_SRC_DIR.."/include/spirv/unified1/extinst.nonsemantic.shader.debuginfo.100.grammar.json",
+  "--extinst=,"..SPIRV_HEADERS_SRC_DIR.."/include/spirv/unified1/extinst.nonsemantic.clspvreflection.grammar.json",
+  "--extinst=,"..SPIRV_HEADERS_SRC_DIR.."/include/spirv/unified1/extinst.nonsemantic.vkspreflection.grammar.json",
+  "--core-tables-body-output="..SPIRV_TOOLS_GEN_OUTPUT_DIR.."/core_tables_body.inc",
+  "--core-tables-header-output="..SPIRV_TOOLS_GEN_OUTPUT_DIR.."/core_tables_header.inc"
+}
 
-os.execute(PYTHON_EXE.." "..SPIRV_TOOLS_SRC_DIR.."/utils/generate_grammar_tables.py --extinst-vendor-grammar="..SPIRV_HEADERS_SRC_DIR.."/include/spirv/unified1/extinst.opencl.std.100.grammar.json --vendor-insts-output="..SPIRV_TOOLS_GEN_OUTPUT_DIR.."/opencl.std.100.insts.inc --vendor-operand-kind-prefix=")
+command = table.concat(command_parts, " ")
+print(command)
 
-os.execute(PYTHON_EXE.." "..SPIRV_TOOLS_SRC_DIR.."/utils/generate_grammar_tables.py --extinst-vendor-grammar="..SPIRV_HEADERS_SRC_DIR.."/include/spirv/unified1/extinst.glsl.std.450.grammar.json --vendor-insts-output="..SPIRV_TOOLS_GEN_OUTPUT_DIR.."/glsl.std.450.insts.inc --vendor-operand-kind-prefix=")
-
-os.execute(PYTHON_EXE.." "..SPIRV_TOOLS_SRC_DIR.."/utils/generate_grammar_tables.py --extinst-vendor-grammar="..SPIRV_HEADERS_SRC_DIR.."/include/spirv/unified1/extinst.spv-amd-shader-explicit-vertex-parameter.grammar.json --vendor-insts-output="..SPIRV_TOOLS_GEN_OUTPUT_DIR.."/spv-amd-shader-explicit-vertex-parameter.insts.inc --vendor-operand-kind-prefix=")
-
-os.execute(PYTHON_EXE.." "..SPIRV_TOOLS_SRC_DIR.."/utils/generate_grammar_tables.py --extinst-vendor-grammar="..SPIRV_HEADERS_SRC_DIR.."/include/spirv/unified1/extinst.spv-amd-shader-trinary-minmax.grammar.json --vendor-insts-output="..SPIRV_TOOLS_GEN_OUTPUT_DIR.."/spv-amd-shader-trinary-minmax.insts.inc --vendor-operand-kind-prefix=")
-
-os.execute(PYTHON_EXE.." "..SPIRV_TOOLS_SRC_DIR.."/utils/generate_grammar_tables.py --extinst-vendor-grammar="..SPIRV_HEADERS_SRC_DIR.."/include/spirv/unified1/extinst.spv-amd-gcn-shader.grammar.json --vendor-insts-output="..SPIRV_TOOLS_GEN_OUTPUT_DIR.."/spv-amd-gcn-shader.insts.inc --vendor-operand-kind-prefix=")
-
-os.execute(PYTHON_EXE.." "..SPIRV_TOOLS_SRC_DIR.."/utils/generate_grammar_tables.py --extinst-vendor-grammar="..SPIRV_HEADERS_SRC_DIR.."/include/spirv/unified1/extinst.spv-amd-shader-ballot.grammar.json --vendor-insts-output="..SPIRV_TOOLS_GEN_OUTPUT_DIR.."/spv-amd-shader-ballot.insts.inc --vendor-operand-kind-prefix=")
-
-os.execute(PYTHON_EXE.." "..SPIRV_TOOLS_SRC_DIR.."/utils/generate_grammar_tables.py --extinst-vendor-grammar="..SPIRV_HEADERS_SRC_DIR.."/include/spirv/unified1/extinst.debuginfo.grammar.json --vendor-insts-output="..SPIRV_TOOLS_GEN_OUTPUT_DIR.."/debuginfo.insts.inc --vendor-operand-kind-prefix=")
-
-os.execute(PYTHON_EXE.." "..SPIRV_TOOLS_SRC_DIR.."/utils/generate_grammar_tables.py --extinst-vendor-grammar="..SPIRV_HEADERS_SRC_DIR.."/include/spirv/unified1/extinst.opencl.debuginfo.100.grammar.json --vendor-insts-output="..SPIRV_TOOLS_GEN_OUTPUT_DIR.."/opencl.debuginfo.100.insts.inc --vendor-operand-kind-prefix=CLDEBUG100_")
-
-os.execute(PYTHON_EXE.." "..SPIRV_TOOLS_SRC_DIR.."/utils/generate_grammar_tables.py --extinst-vendor-grammar="..SPIRV_HEADERS_SRC_DIR.."/include/spirv/unified1/extinst.nonsemantic.shader.debuginfo.100.grammar.json --vendor-insts-output="..SPIRV_TOOLS_GEN_OUTPUT_DIR.."/nonsemantic.shader.debuginfo.100.insts.inc --vendor-operand-kind-prefix=SHDEBUG100_")
-
-os.execute(PYTHON_EXE.." "..SPIRV_TOOLS_SRC_DIR.."/utils/generate_grammar_tables.py --extinst-vendor-grammar="..SPIRV_HEADERS_SRC_DIR.."/include/spirv/unified1/extinst.nonsemantic.clspvreflection.grammar.json --vendor-insts-output="..SPIRV_TOOLS_GEN_OUTPUT_DIR.."/nonsemantic.clspvreflection.insts.inc --vendor-operand-kind-prefix=")
-
-os.execute(PYTHON_EXE.." "..SPIRV_TOOLS_SRC_DIR.."/utils/generate_grammar_tables.py --extinst-vendor-grammar="..SPIRV_HEADERS_SRC_DIR.."/include/spirv/unified1/extinst.nonsemantic.vkspreflection.grammar.json --vendor-insts-output="..SPIRV_TOOLS_GEN_OUTPUT_DIR.."/nonsemantic.vkspreflection.insts.inc --vendor-operand-kind-prefix=")
+os.execute(command)
 
 os.execute(PYTHON_EXE.." "..SPIRV_TOOLS_SRC_DIR.."/utils/generate_language_headers.py --extinst-grammar="..SPIRV_HEADERS_SRC_DIR.."/include/spirv/unified1/extinst.debuginfo.grammar.json --extinst-output-path="..SPIRV_TOOLS_GEN_OUTPUT_DIR.."/DebugInfo.h")
 
