@@ -34,6 +34,13 @@ constexpr inline IndexRange IR(uint32_t first, uint32_t count) {
   return IndexRange{first, count};
 }
 
+struct NameIndex {
+  // Location of the null-terminated name in the global string table kStrings.
+  IndexRange name;
+  // Index of this name's entry in the corresponding by-value table.
+  uint32_t index;
+};
+
 struct NameValue {
   // Location of the null-terminated name in the global string table kStrings.
   IndexRange name;
@@ -43,15 +50,17 @@ struct NameValue {
 
 // The generated include file contains variables:
 //
-//   std::array<NameValue,...> kOperandNames:
-//      Operand names and values, ordered by (operand kind, name)
+//   std::array<NameIndex,...> kOperandNames:
+//      Operand names and index, ordered by (operand kind, name)
+//      The index part is the named entry's index in kOperandsByValue array.
 //      Aliases are included as their own entries.
 //
 //   std::array<OperandDesc, ...> kOperandsByValue:
 //      Operand descriptions, ordered by (operand kind, operand enum value).
 //
-//   std::array<NameValue,...> kInstructionNames:
-//      Instruction names and opcode values, ordered by (name, value)
+//   std::array<NameIndex,...> kInstructionNames:
+//      Instruction names and index, ordered by (name, value)
+//      The index part is the named entry's index in kInstructionDesc array.
 //      Aliases are included as their own entries.
 //
 //   std::array<InstructionDesc, ...> kInstructionDesc
@@ -80,15 +89,25 @@ struct NameValue {
 //      Array of operand types, referenced by IndexRanges elsewhere.
 //      Contains all sequences of operand types used in the grammar.
 
-// Maps an operand kind to a NameValue entries for that kind.
+// Maps an operand kind to NameValue entries for that kind.
 // The result is an IndexRange into kOperandNames, and are sorted
-// are sorted by string name within that span.
+// by string name within that span.
 IndexRange OperandNameRangeForKind(spv_operand_type_t type);
 
 // Maps an operand kind to possible operands for that kind.
 // The result is an IndexRange into kOperandsByValue, and the operands
 // are sorted by value within that span.
 IndexRange OperandByValueRangeForKind(spv_operand_type_t type);
+
+// Maps an extended instruction set kind to NameValue entries for that kind.
+// The result is an IndexRange into kExtIntNames, and are sorted
+// by string name within that span.
+IndexRange ExtInstNameRangeForKind(spv_ext_inst_type_t type);
+
+// Maps an extended instruction set kind to possible operands for that kind.
+// The result is an IndexRange into kExtInstByValue, and the instructions
+// are sorted by opcode value within that span.
+IndexRange ExtInstByValueRangeForKind(spv_ext_inst_type_t type);
 
 // Returns the name of an extension, as an index into kStrings
 IndexRange ExtensionToIndexRange(Extension extension);
@@ -136,16 +155,25 @@ utils::Span<const spvtools::Extension> InstructionDesc::extensions() const {
   return extensions_range.apply(kExtensionSpans);
 }
 
+utils::Span<const spv_operand_type_t> ExtInstDesc::operands() const {
+  return operands_range.apply(kOperandSpans);
+}
+utils::Span<const char> ExtInstDesc::name() const {
+  return name_range.apply(kStrings);
+}
+utils::Span<const spv::Capability> ExtInstDesc::capabilities() const {
+  return capabilities_range.apply(kCapabilitySpans);
+}
+
 spv_result_t LookupOpcode(spv::Op opcode, const InstructionDesc** desc) {
   // Metaphor: Look for the needle in the haystack.
   const InstructionDesc needle(opcode);
-  const auto& descs = getInstructionDesc();
   auto where = std::lower_bound(
-      descs.begin(), descs.end(), needle,
+      kInstructionDesc.begin(), kInstructionDesc.end(), needle,
       [&](const InstructionDesc& lhs, const InstructionDesc& rhs) {
         return uint32_t(lhs.opcode) < uint32_t(rhs.opcode);
       });
-  if (where != descs.end() && where->opcode == opcode) {
+  if (where != kInstructionDesc.end() && where->opcode == opcode) {
     *desc = &*where;
     return SPV_SUCCESS;
   }
@@ -156,17 +184,19 @@ spv_result_t LookupOpcode(const char* name, const InstructionDesc** desc) {
   // The comparison function knows to use 'name' string to compare against
   // when the value is kSentinel.
   const auto kSentinel = uint32_t(-1);
-  const NameValue needle{{}, kSentinel};
-  auto less = [&](const NameValue& lhs, const NameValue& rhs) {
-    const char* lhs_chars = lhs.value == kSentinel ? name : getChars(lhs.name);
-    const char* rhs_chars = rhs.value == kSentinel ? name : getChars(rhs.name);
+  const NameIndex needle{{}, kSentinel};
+  auto less = [&](const NameIndex& lhs, const NameIndex& rhs) {
+    const char* lhs_chars = lhs.index == kSentinel ? name : getChars(lhs.name);
+    const char* rhs_chars = rhs.index == kSentinel ? name : getChars(rhs.name);
     return std::strcmp(lhs_chars, rhs_chars) < 0;
   };
 
-  const auto& names = getInstructionNames();
-  auto where = std::lower_bound(names.begin(), names.end(), needle, less);
-  if (where != names.end() && std::strcmp(getChars(where->name), name) == 0) {
-    return LookupOpcode(static_cast<spv::Op>(where->value), desc);
+  auto where = std::lower_bound(kInstructionNames.begin(),
+                                kInstructionNames.end(), needle, less);
+  if (where != kInstructionNames.end() &&
+      std::strcmp(getChars(where->name), name) == 0) {
+    *desc = &kInstructionDesc[where->index];
+    return SPV_SUCCESS;
   }
   return SPV_ERROR_INVALID_LOOKUP;
 }
@@ -209,7 +239,7 @@ spv_result_t LookupOperand(spv_operand_type_t type, uint32_t value,
     return SPV_ERROR_INVALID_LOOKUP;
   }
 
-  auto span = ir.apply(getOperandsByValue().data());
+  auto span = ir.apply(kOperandsByValue.data());
 
   // Metaphor: Look for the needle in the haystack.
   // The operand value is the first member.
@@ -233,32 +263,86 @@ spv_result_t LookupOperand(spv_operand_type_t type, const char* name,
     return SPV_ERROR_INVALID_LOOKUP;
   }
 
-  auto span = ir.apply(getOperandNames().data());
+  auto span = ir.apply(kOperandNames.data());
 
   // The comparison function knows to use (name, name_len) as the
   // string to compare against when the value is kSentinel.
   const auto kSentinel = uint32_t(-1);
-  const NameValue needle{{}, kSentinel};
+  const NameIndex needle{{}, kSentinel};
   // The strings in the global string table are null-terminated, and the count
   // reflects that.  So always deduct 1 from its length.
-  auto less = [&](const NameValue& lhs, const NameValue& rhs) {
-    const char* lhs_chars = lhs.value == kSentinel ? name : getChars(lhs.name);
-    const char* rhs_chars = rhs.value == kSentinel ? name : getChars(rhs.name);
+  auto less = [&](const NameIndex& lhs, const NameIndex& rhs) {
+    const char* lhs_chars = lhs.index == kSentinel ? name : getChars(lhs.name);
+    const char* rhs_chars = rhs.index == kSentinel ? name : getChars(rhs.name);
     const auto content_cmp = std::strncmp(lhs_chars, rhs_chars, name_len);
     if (content_cmp != 0) {
       return content_cmp < 0;
     }
     const auto lhs_len =
-        lhs.value == kSentinel ? name_len : lhs.name.count() - 1;
+        lhs.index == kSentinel ? name_len : lhs.name.count() - 1;
     const auto rhs_len =
-        rhs.value == kSentinel ? name_len : rhs.name.count() - 1;
+        rhs.index == kSentinel ? name_len : rhs.name.count() - 1;
     return lhs_len < rhs_len;
   };
 
   auto where = std::lower_bound(span.begin(), span.end(), needle, less);
   if (where != span.end() && where->name.count() - 1 == name_len &&
       std::strncmp(getChars(where->name), name, name_len) == 0) {
-    return LookupOperand(type, where->value, desc);
+    *desc = &kOperandsByValue[where->index];
+    return SPV_SUCCESS;
+  }
+  return SPV_ERROR_INVALID_LOOKUP;
+}
+
+spv_result_t LookupExtInst(spv_ext_inst_type_t type, const char* name,
+                           const ExtInstDesc** desc) {
+  auto ir = ExtInstNameRangeForKind(type);
+  if (ir.empty()) {
+    return SPV_ERROR_INVALID_LOOKUP;
+  }
+
+  auto span = ir.apply(kExtInstNames.data());
+
+  // The comparison function knows to use 'name' string to compare against
+  // when the value is kSentinel.
+  const auto kSentinel = uint32_t(-1);
+  const NameIndex needle{{}, kSentinel};
+  auto less = [&](const NameIndex& lhs, const NameIndex& rhs) {
+    const char* lhs_chars = lhs.index == kSentinel ? name : getChars(lhs.name);
+    const char* rhs_chars = rhs.index == kSentinel ? name : getChars(rhs.name);
+    return std::strcmp(lhs_chars, rhs_chars) < 0;
+  };
+
+  auto where = std::lower_bound(span.begin(), span.end(), needle, less);
+  if (where != span.end() && std::strcmp(getChars(where->name), name) == 0) {
+    *desc = &kExtInstByValue[where->index];
+    return SPV_SUCCESS;
+  }
+  return SPV_ERROR_INVALID_LOOKUP;
+}
+
+// Finds the extended instruction description by opcode value.
+// On success, returns SPV_SUCCESS and updates *desc.
+spv_result_t LookupExtInst(spv_ext_inst_type_t type, uint32_t value,
+                           const ExtInstDesc** desc) {
+  auto ir = ExtInstByValueRangeForKind(type);
+  if (ir.empty()) {
+    return SPV_ERROR_INVALID_LOOKUP;
+  }
+
+  auto span = ir.apply(kExtInstByValue.data());
+
+  // Metaphor: Look for the needle in the haystack.
+  // The operand value is the first member.
+  const ExtInstDesc needle(value);
+  auto where =
+      std::lower_bound(span.begin(), span.end(), needle,
+                       [&](const ExtInstDesc& lhs, const ExtInstDesc& rhs) {
+                         return lhs.value < rhs.value;
+                       });
+  if (where != span.end() && where->value == value) {
+    *desc = &*where;
+    return SPV_SUCCESS;
   }
   return SPV_ERROR_INVALID_LOOKUP;
 }
@@ -278,15 +362,79 @@ bool GetExtensionFromString(const char* name, Extension* extension) {
     return std::strcmp(lhs_chars, rhs_chars) < 0;
   };
 
-  const auto& extension_names = getExtensionNames();
-  auto where = std::lower_bound(extension_names.begin(), extension_names.end(),
+  auto where = std::lower_bound(kExtensionNames.begin(), kExtensionNames.end(),
                                 needle, less);
-  if (where != extension_names.end() &&
+  if (where != kExtensionNames.end() &&
       std::strcmp(getChars(where->name), name) == 0) {
     *extension = static_cast<Extension>(where->value);
     return true;
   }
   return false;
+}
+
+// This is dirty copy of the spirv.hpp11 function
+// TODO - Use a generated version of this function
+const char* StorageClassToString(spv::StorageClass value) {
+  switch (value) {
+    case spv::StorageClass::UniformConstant:
+      return "UniformConstant";
+    case spv::StorageClass::Input:
+      return "Input";
+    case spv::StorageClass::Uniform:
+      return "Uniform";
+    case spv::StorageClass::Output:
+      return "Output";
+    case spv::StorageClass::Workgroup:
+      return "Workgroup";
+    case spv::StorageClass::CrossWorkgroup:
+      return "CrossWorkgroup";
+    case spv::StorageClass::Private:
+      return "Private";
+    case spv::StorageClass::Function:
+      return "Function";
+    case spv::StorageClass::Generic:
+      return "Generic";
+    case spv::StorageClass::PushConstant:
+      return "PushConstant";
+    case spv::StorageClass::AtomicCounter:
+      return "AtomicCounter";
+    case spv::StorageClass::Image:
+      return "Image";
+    case spv::StorageClass::StorageBuffer:
+      return "StorageBuffer";
+    case spv::StorageClass::TileImageEXT:
+      return "TileImageEXT";
+    case spv::StorageClass::TileAttachmentQCOM:
+      return "TileAttachmentQCOM";
+    case spv::StorageClass::NodePayloadAMDX:
+      return "NodePayloadAMDX";
+    case spv::StorageClass::CallableDataKHR:
+      return "CallableDataKHR";
+    case spv::StorageClass::IncomingCallableDataKHR:
+      return "IncomingCallableDataKHR";
+    case spv::StorageClass::RayPayloadKHR:
+      return "RayPayloadKHR";
+    case spv::StorageClass::HitAttributeKHR:
+      return "HitAttributeKHR";
+    case spv::StorageClass::IncomingRayPayloadKHR:
+      return "IncomingRayPayloadKHR";
+    case spv::StorageClass::ShaderRecordBufferKHR:
+      return "ShaderRecordBufferKHR";
+    case spv::StorageClass::PhysicalStorageBuffer:
+      return "PhysicalStorageBuffer";
+    case spv::StorageClass::HitObjectAttributeNV:
+      return "HitObjectAttributeNV";
+    case spv::StorageClass::TaskPayloadWorkgroupEXT:
+      return "TaskPayloadWorkgroupEXT";
+    case spv::StorageClass::CodeSectionINTEL:
+      return "CodeSectionINTEL";
+    case spv::StorageClass::DeviceOnlyINTEL:
+      return "DeviceOnlyINTEL";
+    case spv::StorageClass::HostOnlyINTEL:
+      return "HostOnlyINTEL";
+    default:
+      return "Unknown";
+  }
 }
 
 }  // namespace spvtools

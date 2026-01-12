@@ -190,6 +190,7 @@ class Parser {
   struct NumberType {
     spv_number_kind_t type;
     uint32_t bit_width;
+    spv_fp_encoding_t encoding;
   };
 
   // The state used to parse a single SPIR-V binary module.
@@ -385,8 +386,6 @@ spv_result_t Parser::parseInstruction() {
   assert(_.requires_endian_conversion ||
          (_.endian_converted_words.size() == 1));
 
-  recordNumberType(inst_offset, &inst);
-
   if (_.requires_endian_conversion) {
     // We must wait until here to set this pointer, because the vector might
     // have been be resized while we accumulated its elements.
@@ -397,6 +396,8 @@ spv_result_t Parser::parseInstruction() {
     inst.words = _.words + inst_offset;
   }
   inst.num_words = inst_word_count;
+
+  recordNumberType(inst_offset, &inst);
 
   // We must wait until here to set this pointer, because the vector might
   // have been be resized while we accumulated its elements.
@@ -496,11 +497,12 @@ spv_result_t Parser::parseOperand(size_t inst_offset,
     case SPV_OPERAND_TYPE_EXTENSION_INSTRUCTION_NUMBER: {
       assert(spvIsExtendedInstruction(opcode));
       assert(inst->ext_inst_type != SPV_EXT_INST_TYPE_NONE);
-      spv_ext_inst_desc ext_inst;
-      if (grammar_.lookupExtInst(inst->ext_inst_type, word, &ext_inst) ==
+
+      const spvtools::ExtInstDesc* desc = nullptr;
+      if (spvtools::LookupExtInst(inst->ext_inst_type, word, &desc) ==
           SPV_SUCCESS) {
         // if we know about this ext inst, push the expected operands
-        spvPushOperandTypes(ext_inst->operandTypes, expected_operands);
+        spvPushOperandTypes(desc->operands(), expected_operands);
       } else {
         // if we don't know this extended instruction and the set isn't
         // non-semantic, we cannot process further
@@ -634,6 +636,7 @@ spv_result_t Parser::parseOperand(size_t inst_offset,
     } break;
 
     case SPV_OPERAND_TYPE_CAPABILITY:
+    case SPV_OPERAND_TYPE_OPTIONAL_CAPABILITY:
     case SPV_OPERAND_TYPE_EXECUTION_MODEL:
     case SPV_OPERAND_TYPE_ADDRESSING_MODEL:
     case SPV_OPERAND_TYPE_MEMORY_MODEL:
@@ -687,6 +690,8 @@ spv_result_t Parser::parseOperand(size_t inst_offset,
         parsed_operand.type = SPV_OPERAND_TYPE_PACKED_VECTOR_FORMAT;
       if (type == SPV_OPERAND_TYPE_OPTIONAL_FPENCODING)
         parsed_operand.type = SPV_OPERAND_TYPE_FPENCODING;
+      if (type == SPV_OPERAND_TYPE_OPTIONAL_CAPABILITY)
+        parsed_operand.type = SPV_OPERAND_TYPE_CAPABILITY;
 
       const spvtools::OperandDesc* entry = nullptr;
       if (spvtools::LookupOperand(type, word, &entry)) {
@@ -719,6 +724,8 @@ spv_result_t Parser::parseOperand(size_t inst_offset,
     case SPV_OPERAND_TYPE_IMAGE:
     case SPV_OPERAND_TYPE_OPTIONAL_IMAGE:
     case SPV_OPERAND_TYPE_MEMORY_ACCESS:
+    case SPV_OPERAND_TYPE_TENSOR_OPERANDS:
+    case SPV_OPERAND_TYPE_OPTIONAL_TENSOR_OPERANDS:
     case SPV_OPERAND_TYPE_OPTIONAL_MEMORY_ACCESS:
     case SPV_OPERAND_TYPE_OPTIONAL_RAW_ACCESS_CHAIN_OPERANDS:
     case SPV_OPERAND_TYPE_SELECTION_CONTROL:
@@ -744,6 +751,8 @@ spv_result_t Parser::parseOperand(size_t inst_offset,
       if (type == SPV_OPERAND_TYPE_OPTIONAL_MATRIX_MULTIPLY_ACCUMULATE_OPERANDS)
         parsed_operand.type =
             SPV_OPERAND_TYPE_MATRIX_MULTIPLY_ACCUMULATE_OPERANDS;
+      if (type == SPV_OPERAND_TYPE_OPTIONAL_TENSOR_OPERANDS)
+        parsed_operand.type = SPV_OPERAND_TYPE_TENSOR_OPERANDS;
 
       // Check validity of set mask bits. Also prepare for operands for those
       // masks if they have any.  To get operand order correct, scan from
@@ -828,6 +837,7 @@ spv_result_t Parser::setNumericTypeInfoForType(
 
   parsed_operand->number_kind = info.type;
   parsed_operand->number_bit_width = info.bit_width;
+  parsed_operand->fp_encoding = info.encoding;
   // Round up the word count.
   parsed_operand->num_words = static_cast<uint16_t>((info.bit_width + 31) / 32);
   return SPV_SUCCESS;
@@ -845,6 +855,17 @@ void Parser::recordNumberType(size_t inst_offset,
     } else if (spv::Op::OpTypeFloat == opcode) {
       info.type = SPV_NUMBER_FLOATING;
       info.bit_width = peekAt(inst_offset + 2);
+      if (inst->num_words >= 4) {
+        const spvtools::OperandDesc* desc = nullptr;
+        spv_result_t status = spvtools::LookupOperand(
+            SPV_OPERAND_TYPE_FPENCODING, peekAt(inst_offset + 3), &desc);
+        if (status == SPV_SUCCESS) {
+          info.encoding = spvFPEncodingFromOperandFPEncoding(
+              static_cast<spv::FPEncoding>(desc->value));
+        } else {
+          info.encoding = SPV_FP_ENCODING_UNKNOWN;
+        }
+      }
     }
     // The *result* Id of a type generating instruction is the type Id.
     _.type_id_to_number_type_info[inst->result_id] = info;

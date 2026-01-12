@@ -314,10 +314,10 @@ spv_result_t ValidateImageOperands(ValidationState_t& _,
              << "Image Operand Bias can only be used with ImplicitLod opcodes";
     }
 
-    const uint32_t type_id = _.GetTypeId(inst->word(word_index++));
-    if (!_.IsFloatScalarType(type_id)) {
+    const uint32_t bias_type_id = _.GetTypeId(inst->word(word_index++));
+    if (!_.IsFloatScalarType(bias_type_id, 32)) {
       return _.diag(SPV_ERROR_INVALID_DATA, inst)
-             << "Expected Image Operand Bias to be float scalar";
+             << "Expected Image Operand Bias to be a 32-bit float scalar";
     }
 
     if (info.dim != spv::Dim::Dim1D && info.dim != spv::Dim::Dim2D &&
@@ -345,17 +345,19 @@ spv_result_t ValidateImageOperands(ValidationState_t& _,
                 "time";
     }
 
-    const uint32_t type_id = _.GetTypeId(inst->word(word_index++));
+    const uint32_t lod_type_id = _.GetTypeId(inst->word(word_index++));
     if (is_explicit_lod || is_valid_gather_lod_bias_amd) {
-      if (!_.IsFloatScalarType(type_id)) {
+      if (!_.IsFloatScalarType(lod_type_id, 32)) {
         return _.diag(SPV_ERROR_INVALID_DATA, inst)
-               << "Expected Image Operand Lod to be float scalar when used "
+               << "Expected Image Operand Lod to be a 32-bit float scalar when "
+                  "used "
                << "with ExplicitLod";
       }
     } else {
-      if (!_.IsIntScalarType(type_id)) {
+      if (!_.IsIntScalarType(lod_type_id, 32)) {
         return _.diag(SPV_ERROR_INVALID_DATA, inst)
-               << "Expected Image Operand Lod to be int scalar when used with "
+               << "Expected Image Operand Lod to be a 32-bit int scalar when "
+                  "used with "
                << "OpImageFetch";
       }
     }
@@ -379,9 +381,12 @@ spv_result_t ValidateImageOperands(ValidationState_t& _,
     const uint32_t dx_type_id = _.GetTypeId(inst->word(word_index++));
     const uint32_t dy_type_id = _.GetTypeId(inst->word(word_index++));
     if (!_.IsFloatScalarOrVectorType(dx_type_id) ||
-        !_.IsFloatScalarOrVectorType(dy_type_id)) {
+        _.GetBitWidth(dx_type_id) != 32 ||
+        !_.IsFloatScalarOrVectorType(dy_type_id) ||
+        _.GetBitWidth(dy_type_id) != 32) {
       return _.diag(SPV_ERROR_INVALID_DATA, inst)
-             << "Expected both Image Operand Grad ids to be float scalars or "
+             << "Expected both Image Operand Grad ids to be 32-bit float "
+                "scalars or "
              << "vectors";
     }
 
@@ -410,21 +415,23 @@ spv_result_t ValidateImageOperands(ValidationState_t& _,
                 "'Dim'";
     }
 
-    const uint32_t id = inst->word(word_index++);
-    const uint32_t type_id = _.GetTypeId(id);
-    if (!_.IsIntScalarOrVectorType(type_id)) {
+    const uint32_t offset_id = inst->word(word_index++);
+    const uint32_t offset_type_id = _.GetTypeId(offset_id);
+    if (!_.IsIntScalarOrVectorType(offset_type_id) ||
+        _.GetBitWidth(offset_type_id) != 32) {
       return _.diag(SPV_ERROR_INVALID_DATA, inst)
-             << "Expected Image Operand ConstOffset to be int scalar or "
+             << "Expected Image Operand ConstOffset to be a 32-bit int scalar "
+                "or "
              << "vector";
     }
 
-    if (!spvOpcodeIsConstant(_.GetIdOpcode(id))) {
+    if (!spvOpcodeIsConstant(_.GetIdOpcode(offset_id))) {
       return _.diag(SPV_ERROR_INVALID_DATA, inst)
              << "Expected Image Operand ConstOffset to be a const object";
     }
 
     const uint32_t plane_size = GetPlaneCoordSize(info);
-    const uint32_t offset_size = _.GetDimension(type_id);
+    const uint32_t offset_size = _.GetDimension(offset_type_id);
     if (plane_size != offset_size) {
       return _.diag(SPV_ERROR_INVALID_DATA, inst)
              << "Expected Image Operand ConstOffset to have " << plane_size
@@ -438,16 +445,17 @@ spv_result_t ValidateImageOperands(ValidationState_t& _,
              << "Image Operand Offset cannot be used with Cube Image 'Dim'";
     }
 
-    const uint32_t id = inst->word(word_index++);
-    const uint32_t type_id = _.GetTypeId(id);
-    if (!_.IsIntScalarOrVectorType(type_id)) {
+    const uint32_t offset_id = inst->word(word_index++);
+    const uint32_t offset_type_id = _.GetTypeId(offset_id);
+    if (!_.IsIntScalarOrVectorType(offset_type_id) ||
+        _.GetBitWidth(offset_type_id) != 32) {
       return _.diag(SPV_ERROR_INVALID_DATA, inst)
-             << "Expected Image Operand Offset to be int scalar or "
+             << "Expected Image Operand Offset to be a 32-bit int scalar or "
              << "vector";
     }
 
     const uint32_t plane_size = GetPlaneCoordSize(info);
-    const uint32_t offset_size = _.GetDimension(type_id);
+    const uint32_t offset_size = _.GetDimension(offset_type_id);
     if (plane_size != offset_size) {
       return _.diag(SPV_ERROR_INVALID_DATA, inst)
              << "Expected Image Operand Offset to have " << plane_size
@@ -464,7 +472,9 @@ spv_result_t ValidateImageOperands(ValidationState_t& _,
         return _.diag(SPV_ERROR_INVALID_DATA, inst)
                << _.VkErrorID(10213)
                << "Image Operand Offset can only be used with "
-                  "OpImage*Gather operations";
+                  "OpImage*Gather operations."
+               << _.MissingFeature("maintenance8 feature",
+                                   "--allow-offset-texture-operand", false);
       }
     }
   }
@@ -485,9 +495,9 @@ spv_result_t ValidateImageOperands(ValidationState_t& _,
                 "'Dim'";
     }
 
-    const uint32_t id = inst->word(word_index++);
-    const uint32_t type_id = _.GetTypeId(id);
-    const Instruction* type_inst = _.FindDef(type_id);
+    const uint32_t offset_id = inst->word(word_index++);
+    const uint32_t offset_type_id = _.GetTypeId(offset_id);
+    const Instruction* type_inst = _.FindDef(offset_type_id);
     assert(type_inst);
 
     if (type_inst->opcode() != spv::Op::OpTypeArray) {
@@ -507,13 +517,14 @@ spv_result_t ValidateImageOperands(ValidationState_t& _,
 
     const uint32_t component_type = type_inst->word(2);
     if (!_.IsIntVectorType(component_type) ||
-        _.GetDimension(component_type) != 2) {
+        _.GetDimension(component_type) != 2 ||
+        _.GetBitWidth(component_type) != 32) {
       return _.diag(SPV_ERROR_INVALID_DATA, inst)
-             << "Expected Image Operand ConstOffsets array components to be "
-                "int vectors of size 2";
+             << "Expected Image Operand ConstOffsets array components to be a "
+                "32-bit int vectors of size 2";
     }
 
-    if (!spvOpcodeIsConstant(_.GetIdOpcode(id))) {
+    if (!spvOpcodeIsConstant(_.GetIdOpcode(offset_id))) {
       return _.diag(SPV_ERROR_INVALID_DATA, inst)
              << "Expected Image Operand ConstOffsets to be a const object";
     }
@@ -535,10 +546,10 @@ spv_result_t ValidateImageOperands(ValidationState_t& _,
              << "Image Operand Sample requires non-zero 'MS' parameter";
     }
 
-    const uint32_t type_id = _.GetTypeId(inst->word(word_index++));
-    if (!_.IsIntScalarType(type_id)) {
+    const uint32_t sample_type_id = _.GetTypeId(inst->word(word_index++));
+    if (!_.IsIntScalarType(sample_type_id, 32)) {
       return _.diag(SPV_ERROR_INVALID_DATA, inst)
-             << "Expected Image Operand Sample to be int scalar";
+             << "Expected Image Operand Sample to be a 32-bit int scalar";
     }
   }
 
@@ -549,10 +560,10 @@ spv_result_t ValidateImageOperands(ValidationState_t& _,
              << "opcodes or together with Image Operand Grad";
     }
 
-    const uint32_t type_id = _.GetTypeId(inst->word(word_index++));
-    if (!_.IsFloatScalarType(type_id)) {
+    const uint32_t minlod_type_id = _.GetTypeId(inst->word(word_index++));
+    if (!_.IsFloatScalarType(minlod_type_id, 32)) {
       return _.diag(SPV_ERROR_INVALID_DATA, inst)
-             << "Expected Image Operand MinLod to be float scalar";
+             << "Expected Image Operand MinLod to be a 32-bit float scalar";
     }
 
     if (info.dim != spv::Dim::Dim1D && info.dim != spv::Dim::Dim2D &&
@@ -780,8 +791,7 @@ spv_result_t ValidateTypeImage(ValidationState_t& _, const Instruction* inst) {
            << "Corrupt image type definition";
   }
 
-  if (_.IsIntScalarType(info.sampled_type) &&
-      (64 == _.GetBitWidth(info.sampled_type)) &&
+  if (_.IsIntScalarType(info.sampled_type, 64) &&
       !_.HasCapability(spv::Capability::Int64ImageEXT)) {
     return _.diag(SPV_ERROR_INVALID_DATA, inst)
            << "Capability Int64ImageEXT is required when using Sampled Type of "
@@ -790,12 +800,9 @@ spv_result_t ValidateTypeImage(ValidationState_t& _, const Instruction* inst) {
 
   const auto target_env = _.context()->target_env;
   if (spvIsVulkanEnv(target_env)) {
-    if ((!_.IsFloatScalarType(info.sampled_type) &&
-         !_.IsIntScalarType(info.sampled_type)) ||
-        ((32 != _.GetBitWidth(info.sampled_type)) &&
-         (64 != _.GetBitWidth(info.sampled_type))) ||
-        ((64 == _.GetBitWidth(info.sampled_type)) &&
-         _.IsFloatScalarType(info.sampled_type))) {
+    if (!_.IsFloatScalarType(info.sampled_type, 32) &&
+        !_.IsIntScalarType(info.sampled_type, 32) &&
+        !_.IsIntScalarType(info.sampled_type, 64)) {
       return _.diag(SPV_ERROR_INVALID_DATA, inst)
              << _.VkErrorID(4656)
              << "Expected Sampled Type to be a 32-bit int, 64-bit int or "
@@ -1098,7 +1105,7 @@ spv_result_t ValidateSampledImage(ValidationState_t& _,
                << "Result <id> from OpSampledImage instruction must not appear "
                   "as "
                   "operands of Op"
-               << spvOpcodeString(static_cast<spv::Op>(consumer_opcode)) << "."
+               << spvOpcodeString(consumer_opcode) << "."
                << " Found result <id> " << _.getIdName(inst->id())
                << " as an operand of <id> " << _.getIdName(consumer_instr->id())
                << ".";
@@ -1108,12 +1115,11 @@ spv_result_t ValidateSampledImage(ValidationState_t& _,
         return _.diag(SPV_ERROR_INVALID_ID, inst)
                << "Result <id> from OpSampledImage instruction must not appear "
                   "as operand for Op"
-               << spvOpcodeString(static_cast<spv::Op>(consumer_opcode))
+               << spvOpcodeString(consumer_opcode)
                << ", since it is not specified as taking an "
-               << "OpTypeSampledImage."
-               << " Found result <id> " << _.getIdName(inst->id())
-               << " as an operand of <id> " << _.getIdName(consumer_instr->id())
-               << ".";
+               << "OpTypeSampledImage." << " Found result <id> "
+               << _.getIdName(inst->id()) << " as an operand of <id> "
+               << _.getIdName(consumer_instr->id()) << ".";
       }
     }
   }
@@ -1376,7 +1382,7 @@ spv_result_t ValidateImageLod(ValidationState_t& _, const Instruction* inst) {
 spv_result_t ValidateImageDref(ValidationState_t& _, const Instruction* inst,
                                const ImageTypeInfo& info) {
   const uint32_t dref_type = _.GetOperandTypeId(inst, 4);
-  if (!_.IsFloatScalarType(dref_type) || _.GetBitWidth(dref_type) != 32) {
+  if (!_.IsFloatScalarType(dref_type, 32)) {
     return _.diag(SPV_ERROR_INVALID_DATA, inst)
            << "Expected Dref to be of 32-bit float type";
   }
@@ -1610,8 +1616,7 @@ spv_result_t ValidateImageGather(ValidationState_t& _,
       opcode == spv::Op::OpImageSparseGather) {
     const uint32_t component = inst->GetOperandAs<uint32_t>(4);
     const uint32_t component_index_type = _.GetTypeId(component);
-    if (!_.IsIntScalarType(component_index_type) ||
-        _.GetBitWidth(component_index_type) != 32) {
+    if (!_.IsIntScalarType(component_index_type, 32)) {
       return _.diag(SPV_ERROR_INVALID_DATA, inst)
              << "Expected Component to be 32-bit int scalar";
     }
@@ -1932,9 +1937,9 @@ spv_result_t ValidateImageQuerySizeLod(ValidationState_t& _,
   }
 
   const uint32_t lod_type = _.GetOperandTypeId(inst, 3);
-  if (!_.IsIntScalarType(lod_type)) {
+  if (!_.IsIntScalarType(lod_type, 32)) {
     return _.diag(SPV_ERROR_INVALID_DATA, inst)
-           << "Expected Level of Detail to be int scalar";
+           << "Expected Level of Detail to be a 32-bit int scalar";
   }
   return SPV_SUCCESS;
 }

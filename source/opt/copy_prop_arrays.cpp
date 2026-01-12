@@ -104,10 +104,17 @@ Pass::Status CopyPropagateArrays::Process() {
       continue;
     }
 
-    if (CanUpdateUses(&*var_inst, source_object->GetPointerTypeId(this))) {
+    uint32_t pointer_type_id = source_object->GetPointerTypeId(this);
+    if (pointer_type_id == 0) {
+      return Status::Failure;
+    }
+
+    if (CanUpdateUses(&*var_inst, pointer_type_id)) {
       modified = true;
 
-      PropagateObject(&*var_inst, source_object.get(), store_inst);
+      if (!PropagateObject(&*var_inst, source_object.get(), store_inst)) {
+        return Status::Failure;
+      }
     }
   }
 
@@ -170,15 +177,16 @@ Instruction* CopyPropagateArrays::FindStoreInstruction(
   return store_inst;
 }
 
-void CopyPropagateArrays::PropagateObject(Instruction* var_inst,
+bool CopyPropagateArrays::PropagateObject(Instruction* var_inst,
                                           MemoryObject* source,
                                           Instruction* insertion_point) {
   assert(var_inst->opcode() == spv::Op::OpVariable &&
          "This function propagates variables.");
 
   Instruction* new_access_chain = BuildNewAccessChain(insertion_point, source);
+  if (!new_access_chain) return false;
   context()->KillNamesAndDecorates(var_inst);
-  UpdateUses(var_inst, new_access_chain);
+  return UpdateUses(var_inst, new_access_chain);
 }
 
 Instruction* CopyPropagateArrays::BuildNewAccessChain(
@@ -192,7 +200,7 @@ Instruction* CopyPropagateArrays::BuildNewAccessChain(
     return source->GetVariable();
   }
 
-  source->BuildConstants();
+  if (!source->BuildConstants()) return nullptr;
   std::vector<uint32_t> access_ids(source->AccessChain().size());
   std::transform(
       source->AccessChain().cbegin(), source->AccessChain().cend(),
@@ -256,11 +264,14 @@ bool CopyPropagateArrays::HasValidReferencesOnly(Instruction* ptr_inst,
         } else if (use->IsDecoration() || use->opcode() == spv::Op::OpName) {
           return true;
         } else if (use->opcode() == spv::Op::OpStore) {
-          // If we are storing to part of the object it is not an candidate.
+          // If we are storing to part of the object it is not a candidate.
           return ptr_inst->opcode() == spv::Op::OpVariable &&
                  store_inst->GetSingleWordInOperand(kStorePointerInOperand) ==
                      ptr_inst->result_id();
         } else if (IsDebugDeclareOrValue(use)) {
+          // The store does not have to dominate debug instructions. We do not
+          // want debugging info to stop the transformation. It will be fixed
+          // up later.
           return true;
         }
         // Some other instruction.  Be conservative.
@@ -639,7 +650,7 @@ bool CopyPropagateArrays::CanUpdateUses(Instruction* original_ptr_inst,
   });
 }
 
-void CopyPropagateArrays::UpdateUses(Instruction* original_ptr_inst,
+bool CopyPropagateArrays::UpdateUses(Instruction* original_ptr_inst,
                                      Instruction* new_ptr_inst) {
   analysis::TypeManager* type_mgr = context()->get_type_mgr();
   analysis::ConstantManager* const_mgr = context()->get_constant_mgr();
@@ -656,6 +667,22 @@ void CopyPropagateArrays::UpdateUses(Instruction* original_ptr_inst,
     uint32_t index = pair.second;
 
     if (use->IsCommonDebugInstr()) {
+      // It is possible that the debug instructions are not dominated by
+      // `new_ptr_inst`. If not, move the debug instruction to just after
+      // `new_ptr_inst`.
+      BasicBlock* store_block = context()->get_instr_block(new_ptr_inst);
+      if (store_block) {
+        Function* function = store_block->GetParent();
+        DominatorAnalysis* dominator_analysis =
+            context()->GetDominatorAnalysis(function);
+        if (!dominator_analysis->Dominates(new_ptr_inst, use)) {
+          assert(dominator_analysis->Dominates(use, new_ptr_inst));
+          use->InsertAfter(new_ptr_inst);
+          context()->set_instr_block(use,
+                                     context()->get_instr_block(new_ptr_inst));
+        }
+      }
+
       switch (use->GetCommonDebugOpcode()) {
         case CommonDebugInfoDebugDeclare: {
           if (new_ptr_inst->opcode() == spv::Op::OpVariable ||
@@ -680,6 +707,7 @@ void CopyPropagateArrays::UpdateUses(Instruction* original_ptr_inst,
                 def_use_mgr->GetDef(use->GetSingleWordOperand(index + 1));
             auto* deref_expr_instr =
                 context()->get_debug_info_mgr()->DerefDebugExpression(dbg_expr);
+            if (!deref_expr_instr) return false;
             use->SetOperand(index + 1, {deref_expr_instr->result_id()});
 
             context()->AnalyzeUses(deref_expr_instr);
@@ -764,6 +792,8 @@ void CopyPropagateArrays::UpdateUses(Instruction* original_ptr_inst,
         uint32_t new_pointer_type_id =
             type_mgr->FindPointerToType(new_pointee_type_id, storage_class);
 
+        if (new_pointer_type_id == 0) return false;
+
         if (new_pointer_type_id != use->type_id()) {
           use->SetResultType(new_pointer_type_id);
           context()->AnalyzeUses(use);
@@ -810,8 +840,7 @@ void CopyPropagateArrays::UpdateUses(Instruction* original_ptr_inst,
           uint32_t pointee_type_id =
               pointer_type->GetSingleWordInOperand(kTypePointerPointeeInIdx);
           uint32_t copy = GenerateCopy(original_ptr_inst, pointee_type_id, use);
-          assert(copy != 0 &&
-                 "Should not be updating uses unless we know it can be done.");
+          if (copy == 0) return false;
 
           context()->ForgetUses(use);
           use->SetInOperand(index, {copy});
@@ -833,6 +862,7 @@ void CopyPropagateArrays::UpdateUses(Instruction* original_ptr_inst,
         break;
     }
   }
+  return true;
 }
 
 uint32_t CopyPropagateArrays::GetMemberTypeId(
@@ -897,9 +927,7 @@ CopyPropagateArrays::MemoryObject::MemoryObject(Instruction* var_inst,
                                                 iterator begin, iterator end)
     : variable_inst_(var_inst) {
   std::transform(begin, end, std::back_inserter(access_chain_),
-                 [](uint32_t id) {
-                   return AccessChainEntry{true, {id}};
-                 });
+                 [](uint32_t id) { return AccessChainEntry{true, {id}}; });
 }
 
 std::vector<uint32_t> CopyPropagateArrays::MemoryObject::GetAccessIds() const {
@@ -938,7 +966,7 @@ bool CopyPropagateArrays::MemoryObject::Contains(
   return true;
 }
 
-void CopyPropagateArrays::MemoryObject::BuildConstants() {
+bool CopyPropagateArrays::MemoryObject::BuildConstants() {
   for (auto& entry : access_chain_) {
     if (entry.is_result_id) {
       continue;
@@ -951,10 +979,13 @@ void CopyPropagateArrays::MemoryObject::BuildConstants() {
     analysis::ConstantManager* const_mgr = context->get_constant_mgr();
     const analysis::Constant* index_const =
         const_mgr->GetConstant(uint32_type, {entry.immediate});
-    entry.result_id =
-        const_mgr->GetDefiningInstruction(index_const)->result_id();
+    if (!index_const) return false;
+    Instruction* constant_inst = const_mgr->GetDefiningInstruction(index_const);
+    if (!constant_inst) return false;
+    entry.result_id = constant_inst->result_id();
     entry.is_result_id = true;
   }
+  return true;
 }
 
 }  // namespace opt

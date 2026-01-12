@@ -3,18 +3,20 @@ use_relative_paths = True
 vars = {
   'github': 'https://github.com',
 
-  'abseil_revision': '4eb1e49cf32ac70dd1d393812ecbcad1d90af68e',
+  'abseil_revision': '6d8e1a5cf00d6a6b26069b0baf0dd9b855a17459',
 
-  'effcee_revision': 'abcaf70f288ae9f7816b72b2a36fe4add4719a48',
+  'effcee_revision': '514b52ec61609744d7e587d93a7ef9b60407ab45',
 
-  'googletest_revision': '90a41521142c978131f38c6da07b4eb96a9f1ff6',
+  'googletest_revision': '7d7e750850c65099e49cc1a1aac94a79a914bba7',
 
   # Use protobufs before they gained the dependency on abseil
   'protobuf_revision': 'v21.12',
 
-  're2_revision': 'c84a140c93352cdabbfb547c531be34515b12228',
+  're2_revision': 'e7aec5985072c1dbe735add802653ef4b36c231a',
 
-  'spirv_headers_revision': 'bab63ff679c41eb75fc67dac76e1dc44426101e1',
+  'spirv_headers_revision': '0a7f626a6ae86284a413d105b47a6fb413bf6c92',
+
+  'mimalloc_revision': '09a27098aa6e9286518bd9c74e6ffa7199c3f04e',
 }
 
 deps = {
@@ -36,5 +38,8 @@ deps = {
   'external/spirv-headers':
       Var('github') +  '/KhronosGroup/SPIRV-Headers.git@' +
           Var('spirv_headers_revision'),
+
+  'external/mimalloc':
+      Var('github') + '/microsoft/mimalloc.git@' + Var('mimalloc_revision'),
 }
 
