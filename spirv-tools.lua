@@ -35,8 +35,6 @@ command_parts = {
 }
 
 command = table.concat(command_parts, " ")
-print(command)
-
 os.execute(command)
 
 os.execute(PYTHON_EXE.." "..SPIRV_TOOLS_SRC_DIR.."/utils/generate_language_headers.py --extinst-grammar="..SPIRV_HEADERS_SRC_DIR.."/include/spirv/unified1/extinst.debuginfo.grammar.json --extinst-output-path="..SPIRV_TOOLS_GEN_OUTPUT_DIR.."/DebugInfo.h")
