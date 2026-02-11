@@ -103,11 +103,14 @@ set(TEST_SOURCES
   diagnostic_test.cpp
   enum_string_mapping_test.cpp
   enum_set_test.cpp
+  ext_inst.arm_motion_engine_test.cpp
   ext_inst.cldebug100_test.cpp
   ext_inst.debuginfo_test.cpp
   ext_inst.glsl_test.cpp
   ext_inst.non_semantic_test.cpp
   ext_inst.opencl_test.cpp
+  ext_inst.tosa_test.cpp
+  ext_inst_lookup_test.cpp
   fix_word_test.cpp
   generator_magic_number_test.cpp
   hex_float_test.cpp

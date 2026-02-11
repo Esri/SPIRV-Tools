@@ -50,12 +50,6 @@ bool spvOperandIsOptional(spv_operand_type_t type);
 bool spvOperandIsVariable(spv_operand_type_t type);
 
 // Append a list of operand types to the end of the pattern vector.
-// The types parameter specifies the source array of types, ending with
-// SPV_OPERAND_TYPE_NONE.
-void spvPushOperandTypes(const spv_operand_type_t* types,
-                         spv_operand_pattern_t* pattern);
-
-// Append a list of operand types to the end of the pattern vector.
 // The types parameter specifies the source span of types.
 void spvPushOperandTypes(
     const spvtools::utils::Span<const spv_operand_type_t>& types,
@@ -127,5 +121,8 @@ std::function<bool(unsigned)> spvOperandCanBeForwardDeclaredFunction(
 // used in the SSA validation stage of the pipeline
 std::function<bool(unsigned)> spvDbgInfoExtOperandCanBeForwardDeclaredFunction(
     spv::Op opcode, spv_ext_inst_type_t ext_type, uint32_t key);
+
+// Converts an spv::FPEncoding to spv_fp_encoding_t
+spv_fp_encoding_t spvFPEncodingFromOperandFPEncoding(spv::FPEncoding encoding);
 
 #endif  // SOURCE_OPERAND_H_

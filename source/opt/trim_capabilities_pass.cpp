@@ -427,20 +427,20 @@ Handler_OpImageSparseRead_StorageImageReadWithoutFormat(
 // Opcode of interest to determine capabilities requirements.
 constexpr std::array<std::pair<spv::Op, OpcodeHandler>, 14> kOpcodeHandlers{{
     // clang-format off
-    {spv::Op::OpImageRead,         Handler_OpImageRead_StorageImageReadWithoutFormat},
-    {spv::Op::OpImageWrite,        Handler_OpImageWrite_StorageImageWriteWithoutFormat},
-    {spv::Op::OpImageSparseRead,   Handler_OpImageSparseRead_StorageImageReadWithoutFormat},
-    {spv::Op::OpTypeFloat,         Handler_OpTypeFloat_Float16 },
-    {spv::Op::OpTypeFloat,         Handler_OpTypeFloat_Float64 },
-    {spv::Op::OpTypeImage,         Handler_OpTypeImage_ImageMSArray},
-    {spv::Op::OpTypeInt,           Handler_OpTypeInt_Int16 },
-    {spv::Op::OpTypeInt,           Handler_OpTypeInt_Int64 },
-    {spv::Op::OpTypePointer,       Handler_OpTypePointer_StorageInputOutput16},
-    {spv::Op::OpTypePointer,       Handler_OpTypePointer_StoragePushConstant16},
-    {spv::Op::OpTypePointer,       Handler_OpTypePointer_StorageUniform16},
-    {spv::Op::OpTypePointer,       Handler_OpTypePointer_StorageUniform16},
-    {spv::Op::OpTypePointer,       Handler_OpTypePointer_StorageUniformBufferBlock16},
-    {spv::Op::OpTypePointer,       Handler_OpTypePointer_StorageBuffer16BitAccess},
+    {spv::Op::OpImageRead,                   Handler_OpImageRead_StorageImageReadWithoutFormat},
+    {spv::Op::OpImageWrite,                  Handler_OpImageWrite_StorageImageWriteWithoutFormat},
+    {spv::Op::OpImageSparseRead,             Handler_OpImageSparseRead_StorageImageReadWithoutFormat},
+    {spv::Op::OpTypeFloat,                   Handler_OpTypeFloat_Float16 },
+    {spv::Op::OpTypeFloat,                   Handler_OpTypeFloat_Float64 },
+    {spv::Op::OpTypeImage,                   Handler_OpTypeImage_ImageMSArray},
+    {spv::Op::OpTypeInt,                     Handler_OpTypeInt_Int16 },
+    {spv::Op::OpTypeInt,                     Handler_OpTypeInt_Int64 },
+    {spv::Op::OpTypePointer,                 Handler_OpTypePointer_StorageInputOutput16},
+    {spv::Op::OpTypePointer,                 Handler_OpTypePointer_StoragePushConstant16},
+    {spv::Op::OpTypePointer,                 Handler_OpTypePointer_StorageUniform16},
+    {spv::Op::OpTypePointer,                 Handler_OpTypePointer_StorageUniform16},
+    {spv::Op::OpTypePointer,                 Handler_OpTypePointer_StorageUniformBufferBlock16},
+    {spv::Op::OpTypePointer,                 Handler_OpTypePointer_StorageBuffer16BitAccess},
     // clang-format on
 }};
 
@@ -598,9 +598,8 @@ void TrimCapabilitiesPass::addInstructionRequirementsForExtInst(
   spv_ext_inst_type_t instructionSet =
       spvExtInstImportTypeGet(extInstSet.AsString().c_str());
 
-  spv_ext_inst_desc desc = {};
-  auto result =
-      context()->grammar().lookupExtInst(instructionSet, extInstruction, &desc);
+  const ExtInstDesc* desc = nullptr;
+  auto result = LookupExtInst(instructionSet, extInstruction, &desc);
   if (result != SPV_SUCCESS) {
     return;
   }
@@ -613,7 +612,9 @@ void TrimCapabilitiesPass::addInstructionRequirements(
     ExtensionSet* extensions) const {
   // Ignoring OpCapability and OpExtension instructions.
   if (instruction->opcode() == spv::Op::OpCapability ||
-      instruction->opcode() == spv::Op::OpExtension) {
+      instruction->opcode() == spv::Op::OpConditionalCapabilityINTEL ||
+      instruction->opcode() == spv::Op::OpExtension ||
+      instruction->opcode() == spv::Op::OpConditionalExtensionINTEL) {
     return;
   }
 
@@ -632,7 +633,7 @@ void TrimCapabilitiesPass::addInstructionRequirements(
   }
 
   // Last case: some complex logic needs to be run to determine capabilities.
-  auto[begin, end] = opcodeHandlers_.equal_range(instruction->opcode());
+  auto [begin, end] = opcodeHandlers_.equal_range(instruction->opcode());
   for (auto it = begin; it != end; it++) {
     const OpcodeHandler handler = it->second;
     auto result = handler(instruction);
@@ -755,7 +756,7 @@ Pass::Status TrimCapabilitiesPass::Process() {
     return Status::SuccessWithoutChange;
   }
 
-  auto[required_capabilities, required_extensions] =
+  auto [required_capabilities, required_extensions] =
       DetermineRequiredCapabilitiesAndExtensions();
 
   Pass::Status capStatus = TrimUnrequiredCapabilities(required_capabilities);

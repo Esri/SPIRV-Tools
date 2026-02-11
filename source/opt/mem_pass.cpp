@@ -100,17 +100,25 @@ Instruction* MemPass::GetPtr(uint32_t ptrId, uint32_t* varId) {
   Instruction* ptrInst = get_def_use_mgr()->GetDef(*varId);
   Instruction* varInst;
 
-  if (ptrInst->opcode() == spv::Op::OpConstantNull) {
-    *varId = 0;
-    return ptrInst;
+  switch (ptrInst->opcode()) {
+    case spv::Op::OpVariable:
+    case spv::Op::OpFunctionParameter:
+      varInst = ptrInst;
+      break;
+    case spv::Op::OpAccessChain:
+    case spv::Op::OpInBoundsAccessChain:
+    case spv::Op::OpPtrAccessChain:
+    case spv::Op::OpInBoundsPtrAccessChain:
+    case spv::Op::OpImageTexelPointer:
+    case spv::Op::OpCopyObject:
+      varInst = ptrInst->GetBaseAddress();
+      break;
+    default:
+      *varId = 0;
+      return ptrInst;
+      break;
   }
 
-  if (ptrInst->opcode() != spv::Op::OpVariable &&
-      ptrInst->opcode() != spv::Op::OpFunctionParameter) {
-    varInst = ptrInst->GetBaseAddress();
-  } else {
-    varInst = ptrInst;
-  }
   if (varInst->opcode() == spv::Op::OpVariable) {
     *varId = varInst->result_id();
   } else {
@@ -332,7 +340,7 @@ bool MemPass::IsTargetVar(uint32_t varId) {
 //           %50 = OpUndef %int
 //           [ ... ]
 //           %30 = OpPhi %int %int_42 %13 %50 %14 %50 %15
-void MemPass::RemovePhiOperands(
+bool MemPass::RemovePhiOperands(
     Instruction* phi, const std::unordered_set<BasicBlock*>& reachable_blocks) {
   std::vector<Operand> keep_operands;
   uint32_t type_id = 0;
@@ -374,6 +382,7 @@ void MemPass::RemovePhiOperands(
       if (!undef_id) {
         type_id = arg_def_instr->type_id();
         undef_id = Type2Undef(type_id);
+        if (undef_id == 0) return false;
       }
       keep_operands.push_back(
           Operand(spv_operand_type_t::SPV_OPERAND_TYPE_ID, {undef_id}));
@@ -392,6 +401,7 @@ void MemPass::RemovePhiOperands(
   context()->ForgetUses(phi);
   phi->ReplaceOperands(keep_operands);
   context()->AnalyzeUses(phi);
+  return true;
 }
 
 void MemPass::RemoveBlock(Function::iterator* bi) {
@@ -414,8 +424,8 @@ void MemPass::RemoveBlock(Function::iterator* bi) {
   *bi = bi->Erase();
 }
 
-bool MemPass::RemoveUnreachableBlocks(Function* func) {
-  if (func->IsDeclaration()) return false;
+Pass::Status MemPass::RemoveUnreachableBlocks(Function* func) {
+  if (func->IsDeclaration()) return Status::SuccessWithoutChange;
   bool modified = false;
 
   // Mark reachable all blocks reachable from the function's entry block.
@@ -461,9 +471,11 @@ bool MemPass::RemoveUnreachableBlocks(Function* func) {
     // If the block is reachable and has Phi instructions, remove all
     // operands from its Phi instructions that reference unreachable blocks.
     // If the block has no Phi instructions, this is a no-op.
-    block.ForEachPhiInst([&reachable_blocks, this](Instruction* phi) {
-      RemovePhiOperands(phi, reachable_blocks);
-    });
+    bool success =
+        block.WhileEachPhiInst([&reachable_blocks, this](Instruction* phi) {
+          return RemovePhiOperands(phi, reachable_blocks);
+        });
+    if (!success) return Status::Failure;
   }
 
   // Erase unreachable blocks.
@@ -476,13 +488,11 @@ bool MemPass::RemoveUnreachableBlocks(Function* func) {
     }
   }
 
-  return modified;
+  return modified ? Status::SuccessWithChange : Status::SuccessWithoutChange;
 }
 
-bool MemPass::CFGCleanup(Function* func) {
-  bool modified = false;
-  modified |= RemoveUnreachableBlocks(func);
-  return modified;
+Pass::Status MemPass::CFGCleanup(Function* func) {
+  return RemoveUnreachableBlocks(func);
 }
 
 void MemPass::CollectTargetVars(Function* func) {

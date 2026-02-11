@@ -111,6 +111,7 @@ const char* spvOperandTypeStr(spv_operand_type_t type) {
     case SPV_OPERAND_TYPE_KERNEL_PROFILING_INFO:
       return "kernel profiling info";
     case SPV_OPERAND_TYPE_CAPABILITY:
+    case SPV_OPERAND_TYPE_OPTIONAL_CAPABILITY:
       return "capability";
     case SPV_OPERAND_TYPE_RAY_FLAGS:
       return "ray flags";
@@ -139,6 +140,9 @@ const char* spvOperandTypeStr(spv_operand_type_t type) {
     case SPV_OPERAND_TYPE_MATRIX_MULTIPLY_ACCUMULATE_OPERANDS:
     case SPV_OPERAND_TYPE_OPTIONAL_MATRIX_MULTIPLY_ACCUMULATE_OPERANDS:
       return "matrix multiply accumulate operands";
+    case SPV_OPERAND_TYPE_TENSOR_OPERANDS:
+    case SPV_OPERAND_TYPE_OPTIONAL_TENSOR_OPERANDS:
+      return "tensor operands";
     case SPV_OPERAND_TYPE_INITIALIZATION_MODE_QUALIFIER:
       return "initialization mode qualifier";
     case SPV_OPERAND_TYPE_HOST_ACCESS_QUALIFIER:
@@ -203,6 +207,24 @@ const char* spvOperandTypeStr(spv_operand_type_t type) {
       return "cooperative vector matrix layout";
     case SPV_OPERAND_TYPE_COMPONENT_TYPE:
       return "component type";
+
+    case SPV_OPERAND_TYPE_KERNEL_PROPERTY_FLAGS:
+      return "kernel property flags";
+    case SPV_OPERAND_TYPE_SHDEBUG100_BUILD_IDENTIFIER_FLAGS:
+      return "NonSemantic.Shader.DebugInfo.100 debug build identifier flags";
+    case SPV_OPERAND_TYPE_SHDEBUG100_DEBUG_BASE_TYPE_ATTRIBUTE_ENCODING:
+      return "NonSemantic.Shader.DebugInfo.100 debug base type attribute "
+             "encoding";
+    case SPV_OPERAND_TYPE_SHDEBUG100_DEBUG_COMPOSITE_TYPE:
+      return "NonSemantic.Shader.DebugInfo.100 debug composite type";
+    case SPV_OPERAND_TYPE_SHDEBUG100_DEBUG_IMPORTED_ENTITY:
+      return "NonSemantic.Shader.DebugInfo.100 debug imported entity";
+    case SPV_OPERAND_TYPE_SHDEBUG100_DEBUG_INFO_FLAGS:
+      return "NonSemantic.Shader.DebugInfo.100 debug info flags";
+    case SPV_OPERAND_TYPE_SHDEBUG100_DEBUG_OPERATION:
+      return "NonSemantic.Shader.DebugInfo.100 debug operation";
+    case SPV_OPERAND_TYPE_SHDEBUG100_DEBUG_TYPE_QUALIFIER:
+      return "NonSemantic.Shader.DebugInfo.100 debug type qualifier";
 
     case SPV_OPERAND_TYPE_NONE:
       return "NONE";
@@ -317,6 +339,14 @@ bool spvOperandIsConcrete(spv_operand_type_t type) {
     case SPV_OPERAND_TYPE_TENSOR_CLAMP_MODE:
     case SPV_OPERAND_TYPE_COOPERATIVE_VECTOR_MATRIX_LAYOUT:
     case SPV_OPERAND_TYPE_COMPONENT_TYPE:
+    case SPV_OPERAND_TYPE_KERNEL_PROPERTY_FLAGS:
+    case SPV_OPERAND_TYPE_SHDEBUG100_BUILD_IDENTIFIER_FLAGS:
+    case SPV_OPERAND_TYPE_SHDEBUG100_DEBUG_BASE_TYPE_ATTRIBUTE_ENCODING:
+    case SPV_OPERAND_TYPE_SHDEBUG100_DEBUG_COMPOSITE_TYPE:
+    case SPV_OPERAND_TYPE_SHDEBUG100_DEBUG_IMPORTED_ENTITY:
+    case SPV_OPERAND_TYPE_SHDEBUG100_DEBUG_INFO_FLAGS:
+    case SPV_OPERAND_TYPE_SHDEBUG100_DEBUG_OPERATION:
+    case SPV_OPERAND_TYPE_SHDEBUG100_DEBUG_TYPE_QUALIFIER:
       return true;
     default:
       break;
@@ -340,6 +370,7 @@ bool spvOperandIsConcreteMask(spv_operand_type_t type) {
     case SPV_OPERAND_TYPE_RAW_ACCESS_CHAIN_OPERANDS:
     case SPV_OPERAND_TYPE_COOPERATIVE_MATRIX_REDUCE:
     case SPV_OPERAND_TYPE_TENSOR_ADDRESSING_OPERANDS:
+    case SPV_OPERAND_TYPE_TENSOR_OPERANDS:
       return true;
     default:
       break;
@@ -363,6 +394,8 @@ bool spvOperandIsOptional(spv_operand_type_t type) {
     case SPV_OPERAND_TYPE_OPTIONAL_CIV:
     case SPV_OPERAND_TYPE_OPTIONAL_RAW_ACCESS_CHAIN_OPERANDS:
     case SPV_OPERAND_TYPE_OPTIONAL_FPENCODING:
+    case SPV_OPERAND_TYPE_OPTIONAL_TENSOR_OPERANDS:
+    case SPV_OPERAND_TYPE_OPTIONAL_CAPABILITY:
       return true;
     default:
       break;
@@ -377,6 +410,7 @@ bool spvOperandIsVariable(spv_operand_type_t type) {
     case SPV_OPERAND_TYPE_VARIABLE_LITERAL_INTEGER:
     case SPV_OPERAND_TYPE_VARIABLE_LITERAL_INTEGER_ID:
     case SPV_OPERAND_TYPE_VARIABLE_ID_LITERAL_INTEGER:
+    case SPV_OPERAND_TYPE_VARIABLE_CAPABILITY:
       return true;
     default:
       break;
@@ -407,6 +441,10 @@ bool spvExpandOperandSequenceOnce(spv_operand_type_t type,
       pattern->push_back(type);
       pattern->push_back(SPV_OPERAND_TYPE_LITERAL_INTEGER);
       pattern->push_back(SPV_OPERAND_TYPE_OPTIONAL_ID);
+      return true;
+    case SPV_OPERAND_TYPE_VARIABLE_CAPABILITY:
+      pattern->push_back(type);
+      pattern->push_back(SPV_OPERAND_TYPE_OPTIONAL_CAPABILITY);
       return true;
     default:
       break;
@@ -485,11 +523,15 @@ std::function<bool(unsigned)> spvOperandCanBeForwardDeclaredFunction(
     case spv::Op::OpSelectionMerge:
     case spv::Op::OpDecorate:
     case spv::Op::OpMemberDecorate:
+    case spv::Op::OpMemberDecorateIdEXT:
     case spv::Op::OpDecorateId:
     case spv::Op::OpDecorateStringGOOGLE:
     case spv::Op::OpMemberDecorateStringGOOGLE:
     case spv::Op::OpBranch:
     case spv::Op::OpLoopMerge:
+    case spv::Op::OpConditionalEntryPointINTEL:
+    case spv::Op::OpConditionalCapabilityINTEL:
+    case spv::Op::OpConditionalExtensionINTEL:
       out = [](unsigned) { return true; };
       break;
     case spv::Op::OpGroupDecorate:
@@ -540,6 +582,9 @@ std::function<bool(unsigned)> spvOperandCanBeForwardDeclaredFunction(
       // approximate, due to variable operands
       out = [](unsigned index) { return index > 6; };
       break;
+    case spv::Op::OpGraphEntryPointARM:
+      out = [](unsigned index) { return index == 0; };
+      break;
     default:
       out = [](unsigned) { return false; };
       break;
@@ -587,4 +632,18 @@ std::function<bool(unsigned)> spvDbgInfoExtOperandCanBeForwardDeclaredFunction(
     }
   }
   return out;
+}
+
+spv_fp_encoding_t spvFPEncodingFromOperandFPEncoding(spv::FPEncoding encoding) {
+  switch (encoding) {
+    case spv::FPEncoding::BFloat16KHR:
+      return SPV_FP_ENCODING_BFLOAT16;
+    case spv::FPEncoding::Float8E4M3EXT:
+      return SPV_FP_ENCODING_FLOAT8_E4M3;
+    case spv::FPEncoding::Float8E5M2EXT:
+      return SPV_FP_ENCODING_FLOAT8_E5M2;
+    case spv::FPEncoding::Max:
+      break;
+  }
+  return SPV_FP_ENCODING_UNKNOWN;
 }
