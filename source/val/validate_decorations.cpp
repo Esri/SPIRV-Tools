@@ -22,6 +22,7 @@
 #include <vector>
 
 #include "source/diagnostic.h"
+#include "source/latest_version_opencl_std_header.h"
 #include "source/opcode.h"
 #include "source/spirv_constant.h"
 #include "source/spirv_target_env.h"
@@ -1250,6 +1251,14 @@ spv_result_t CheckDecorationsOfVariables(ValidationState_t& vstate) {
                     "decorations specified";
         }
       }
+      if (storageClass == spv::StorageClass::TileImageEXT) {
+        if (!hasDecoration(var_id, spv::Decoration::Location, vstate)) {
+          return vstate.diag(SPV_ERROR_INVALID_DATA, vstate.FindDef(var_id))
+                 << vstate.VkErrorID(8723)
+                 << "Variable with TileImageEXT Storage Class must be "
+                    "decorated with Location.";
+        }
+      }
     }
   }
   return SPV_SUCCESS;
@@ -1821,6 +1830,32 @@ spv_result_t CheckFPRoundingModeForShaders(ValidationState_t& vstate,
   return SPV_SUCCESS;
 }
 
+spv_result_t CheckFPRoundingModeForKernels(ValidationState_t& vstate,
+                                           const Instruction& inst) {
+  const auto opcode = inst.opcode();
+  const bool isSqrtExtendedInstruction =
+      spvIsExtendedInstruction(inst.opcode()) &&
+      inst.ext_inst_type() == SPV_EXT_INST_TYPE_OPENCL_STD &&
+      inst.word(4) == OpenCLLIB::Sqrt;
+  if (opcode == spv::Op::OpFDiv || isSqrtExtendedInstruction) {
+    if (!vstate.HasCapability(spv::Capability::RoundedDivideSqrtINTEL)) {
+      return vstate.diag(SPV_ERROR_INVALID_ID, &inst)
+             << "FPRoundingMode decoration can be applied to OpFDiv and "
+                "sqrt extended instructions only if the RoundedDivideSqrtINTEL "
+                "capability is enabled.";
+    }
+  } else if (opcode != spv::Op::OpConvertFToU &&
+             opcode != spv::Op::OpConvertFToS &&
+             opcode != spv::Op::OpConvertSToF &&
+             opcode != spv::Op::OpConvertUToF &&
+             opcode != spv::Op::OpFConvert) {
+    return vstate.diag(SPV_ERROR_INVALID_ID, &inst)
+           << "FPRoundingMode decoration can be applied only to a conversion "
+              "instruction to or from a floating-point type.";
+  }
+  return SPV_SUCCESS;
+}
+
 // Returns SPV_SUCCESS if validation rules are satisfied for the NonReadable or
 // NonWritable
 // decoration.  Otherwise emits a diagnostic and returns something other than
@@ -2156,8 +2191,8 @@ spv_result_t CheckRelaxPrecisionDecoration(ValidationState_t& vstate,
 // than the decorated object.  Assumes each decoration on a group have been
 // propagated down to the group members.
 spv_result_t CheckDecorationsFromDecoration(ValidationState_t& vstate) {
-  // Some rules are only checked for shaders.
   const bool is_shader = vstate.HasCapability(spv::Capability::Shader);
+  const bool is_kernel = vstate.HasCapability(spv::Capability::Kernel);
 
   for (const auto& kv : vstate.id_decorations()) {
     const uint32_t id = kv.first;
@@ -2180,6 +2215,8 @@ spv_result_t CheckDecorationsFromDecoration(ValidationState_t& vstate) {
           if (is_shader)
             PASS_OR_BAIL(
                 CheckFPRoundingModeForShaders(vstate, *inst, decoration));
+          if (is_kernel)
+            PASS_OR_BAIL(CheckFPRoundingModeForKernels(vstate, *inst));
           break;
         case spv::Decoration::NonReadable:
         case spv::Decoration::NonWritable:
