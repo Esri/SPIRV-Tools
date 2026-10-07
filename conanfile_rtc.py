@@ -1,8 +1,8 @@
 from conans import ConanFile
 
-class SPIRVToolsConan(ConanFile):
+class SpirvToolsConan(ConanFile):
     name = "spirv-tools"
-    version = "0.0.1"
+    version = "vulkan-sdk-1.4.363.0"
     url = "https://github.com/Esri/SPIRV-Tools/blob/runtimecore"
     license = "https://github.com/Esri/SPIRV-Tools/blob/runtimecore/LICENSE"
     description = "An API and commands for processing SPIR-V modules"
